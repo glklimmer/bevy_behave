@@ -442,6 +442,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_behave"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "dyn-clone",
+ "ego-tree",
+]
+
+[[package]]
 name = "bevy_color"
 version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1845,18 +1854,6 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f97b51c5cc57ef7c5f7a0c57c250251c49ee4c28f819f87ac32f4aceabc36792"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "enum_dispatch"
-version = "0.3.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa18ce2bc66555b3218614519ac839ddb759a7d6720732f979ef8d13be147ecd"
-dependencies = [
- "once_cell",
  "proc-macro2",
  "quote",
  "syn",
@@ -3904,16 +3901,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "trigtest"
-version = "0.1.0"
-dependencies = [
- "bevy",
- "dyn-clone",
- "ego-tree",
- "enum_dispatch",
 ]
 
 [[package]]

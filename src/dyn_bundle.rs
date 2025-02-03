@@ -1,3 +1,4 @@
+// This is a slightly updated version of https://crates.io/crates/bevy_dynamic_bundle
 use bevy::ecs::system::{EntityCommand, EntityCommands};
 use bevy::prelude::{Bundle, Commands, Entity, World};
 
@@ -84,7 +85,7 @@ pub trait DynamicSpawn {
 }
 
 // Implementation for Commands
-impl<'a, 'b> DynamicSpawn for Commands<'a, 'b> {
+impl DynamicSpawn for Commands<'_, '_> {
     fn dyn_spawn(&mut self, dyn_bundel: DynamicBundel) -> EntityCommands {
         let mut entity_commands = self.spawn(());
         entity_commands.dyn_insert(dyn_bundel);
