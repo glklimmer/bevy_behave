@@ -22,17 +22,20 @@ fn main() {
 }
 
 fn insert_bt(mut commands: Commands) {
-    let t = tree!(Behaviour::SequenceFlow(vec![
-        Behaviour::Wait(1.0),
-        Behaviour::SpawnTask(DynamicBundel::new((
-            SlowAction::succeeding("Single Slowcoach", 1.0),
-            Name::new("Single Slowcoach")
-        ))),
-    ]));
+    let parent = commands.spawn(Name::new("parent")).id();
+    let t = tree! {
+        Behaviour::SequenceFlow => {
+            Behaviour::Wait(1.0),
+            Behaviour::SpawnTask(DynamicBundel::new((
+                SlowAction::succeeding("Single Slowcoach", 1.0),
+                Name::new("Single Slowcoach")
+            ))),
+        }
+    };
 
     let bt = BehaviourTree::new(t);
-
-    commands.spawn((Name::new("bt entity"), bt));
+    let bt_ent = commands.spawn((Name::new("bt entity"), bt)).id();
+    commands.entity(parent).add_child(bt_ent);
 }
 
 fn dump(q: Query<Entity>, mut commands: Commands) {
@@ -70,18 +73,13 @@ impl SlowAction {
 }
 
 fn slow_action_plugin(app: &mut App) {
-    app.add_systems(
-        Update,
-        slow_action_system.run_if(on_timer(Duration::from_secs(1))),
-    );
+    app.add_systems(Update, slow_action_system);
+    // .run_if(on_timer(Duration::from_secs(1))),
+    // );
     app.add_observer(on_slow_action_added);
 }
 
-fn on_slow_action_added(
-    trigger: Trigger<OnAdd, SlowAction>,
-    mut commands: Commands,
-    q: Query<&SlowAction>,
-) {
+fn on_slow_action_added(trigger: Trigger<OnAdd, SlowAction>, q: Query<(&SlowAction, &BtCtx)>) {
     let slow = q.get(trigger.entity()).unwrap();
     info!("Slow action added: {:?} {:?}", trigger.entity(), slow);
 }
