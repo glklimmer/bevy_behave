@@ -1,0 +1,10 @@
+[package]
+name = "trigtest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy = "0.15.1"
+dyn-clone = "1.0.18"
+ego-tree = "0.10.0"
+enum_dispatch = "0.3.13"
