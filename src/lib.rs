@@ -33,6 +33,8 @@ struct BehaveAwaitingTrigger;
 #[derive(Component, Reflect, Debug)]
 pub struct BehaveFinished(pub bool);
 
+pub type BoxedConditionSystem = Box<dyn System<In = In<BehaveCtx>, Out = bool>>;
+
 /// A behaviour added to the tree by a user, which we convert to a a BehaviourNode tree internally
 /// to run the tree. This is the template of the behaviour without all the internal runtime state.
 ///
@@ -40,7 +42,7 @@ pub struct BehaveFinished(pub bool);
 /// although this probably makes it hard to load the tree def from an asset file?
 ///
 /// TODO: could have an existing entity task too, that we insert a Running component on to start it.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Behave {
     /// Waits this many seconds before Succeeding
     Wait(f32),
@@ -57,17 +59,22 @@ pub enum Behave {
     AlwaysSucceed,
     /// Always fails
     AlwaysFail,
+    /// If, then
+    Conditional(BoxedConditionSystem),
 }
 
 impl Behave {
     pub fn dynamic_spawn<T: Bundle + Clone>(bundle: T) -> Behave {
         Behave::DynamicEntity(DynamicBundel::new(bundle))
     }
+    pub fn conditional<Marker>(system: impl IntoSystem<In<BehaveCtx>, bool, Marker>) -> Behave {
+        Behave::Conditional(Box::new(IntoSystem::into_system(system)))
+    }
 }
 
 /// A state wraps the behaviour, and is the node in our internal tree representation of the behaviour tree
 /// One per Behave, with extra state bits.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) enum BehaveNode {
     Wait {
         start_time: Option<f32>,
@@ -95,6 +102,10 @@ pub(crate) enum BehaveNode {
     AlwaysFail {
         status: Option<BehaveNodeStatus>,
     },
+    Conditional {
+        status: Option<BehaveNodeStatus>,
+        system: BoxedConditionSystem,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -107,6 +118,7 @@ enum EntityTaskStatus {
 impl BehaveNode {
     fn existing_status(&self) -> &Option<BehaveNodeStatus> {
         match self {
+            BehaveNode::Conditional { status, .. } => status,
             BehaveNode::Wait { status, .. } => status,
             BehaveNode::SpawnTask { status, .. } => status,
             BehaveNode::SequenceFlow { status } => status,
@@ -122,6 +134,7 @@ impl std::fmt::Display for BehaveNode {
     #[rustfmt::skip]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            BehaveNode::Conditional { .. } => write!(f, "Conditional")?,
             BehaveNode::Wait { secs_to_wait, .. } => write!(f, "Wait({secs_to_wait})")?,
             BehaveNode::SpawnTask { task_status, .. } => write!(f, "SpawnTask({task_status:?})")?,
             BehaveNode::SequenceFlow { .. } => write!(f, "SequenceFlow")?,
@@ -143,6 +156,7 @@ impl std::fmt::Display for BehaveNode {
 impl BehaveNode {
     pub(crate) fn new(behave: Behave) -> Self {
         match behave {
+            Behave::Conditional(_) => panic!("fooo"),
             Behave::Wait(secs_to_wait) => Self::Wait {
                 start_time: None,
                 secs_to_wait,
@@ -180,6 +194,7 @@ fn tick_node(
         Some(BehaveNodeStatus::Failure) => return BehaveNodeStatus::Failure,
     }
     match n.value() {
+        Conditional { status, system } => BehaveNodeStatus::Running,
         Invert { .. } => {
             let mut only_child = n.first_child().expect("Invert nodes must have a child");
             if only_child.has_siblings() {
