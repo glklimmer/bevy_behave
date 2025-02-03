@@ -48,9 +48,9 @@ pub enum Behave {
     /// Use the Behaviour::spawn_entity constructor, or import dyn_bundle (not in prelude)
     DynamicEntity(DynamicBundel),
     /// Runs children in sequence, failing if any fails, succeeding if all succeed
-    SequenceFlow,
+    Sequence,
     /// Runs children in sequence until one succeeds. If all fail, this fails.
-    FallbackFlow,
+    Fallback,
     /// Inverts success/failure of child. Must only have one child.
     Invert,
     /// Always succeeds
@@ -60,7 +60,7 @@ pub enum Behave {
 }
 
 impl Behave {
-    pub fn spawn_entity<T: Bundle + Clone>(bundle: T) -> Behave {
+    pub fn dynamic_spawn<T: Bundle + Clone>(bundle: T) -> Behave {
         Behave::DynamicEntity(DynamicBundel::new(bundle))
     }
 }
@@ -153,8 +153,8 @@ impl BehaveNode {
                 status: None,
                 bundle,
             },
-            Behave::SequenceFlow => Self::SequenceFlow { status: None },
-            Behave::FallbackFlow => Self::FallbackFlow { status: None },
+            Behave::Sequence => Self::SequenceFlow { status: None },
+            Behave::Fallback => Self::FallbackFlow { status: None },
             Behave::Invert => Self::Invert { status: None },
             Behave::AlwaysSucceed => Self::AlwaysSucceed { status: None },
             Behave::AlwaysFail => Self::AlwaysFail { status: None },

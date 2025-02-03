@@ -23,20 +23,19 @@ fn insert_bt(mut commands: Commands) {
     let parent = commands.spawn(Name::new("parent")).id();
     info!("Parent : {parent}");
     let t = tree! {
-        Behave::FallbackFlow => {
-            // Behave::Wait(1.0),
-            Behave::spawn_entity((
+        Behave::Fallback => {
+            Behave::dynamic_spawn((
                 SlowAction::failing("Single Slowcoach", 2.0),
                 Name::new("Single Slowcoach failing")
             )),
             Behave::AlwaysFail,
             Behave::Invert => {
-                Behave::spawn_entity((
+                Behave::dynamic_spawn((
                     SlowAction::succeeding("Single Slowcoach inside invert", 1.0),
                     Name::new("Single Slowcoach inside invert")
                 )),
             },
-            Behave::spawn_entity((
+            Behave::dynamic_spawn((
                 SlowAction::succeeding("Single Slowcoach", 1.0),
                 Name::new("Single Slowcoach")
             )),
@@ -45,8 +44,9 @@ fn insert_bt(mut commands: Commands) {
     };
 
     let bt = BehaveTree::new(t);
-    let bt_ent = commands.spawn((Name::new("bt entity"), bt)).id();
-    commands.entity(parent).add_child(bt_ent);
+    let bt_ent = commands
+        .spawn((Name::new("bt entity"), bt))
+        .set_parent(parent);
 }
 
 #[derive(Component, Debug, Clone)]

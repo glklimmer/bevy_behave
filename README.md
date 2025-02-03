@@ -1,48 +1,55 @@
-```rust
-let tree = [
- FallbackFlow::with_children([
-  Sequence::new("orbiting").with_children([ // seqflow
-        // take a bundle to delay spawning?
-  	Action::spawn((Name("orbit"), OrbitKeeperExec::new(..)))
-    Action::wait(duration),
-  	Action::invert(Action::spawn(((TargetRel..)))
-  ]),
-  Action::new((ExplodeExec)), // or explode on failure
- ]);
-```
-Action nodes need to store a dynamicentity for later spawning?
+# bevy_behave
 
-lose the ability to chuck components like "Trigger success after X mins" onto flow control nodes, since they aren't entities. but entity for current state of tree can access a FlowCtx component we insert?
-
-spawn that onto one entity to manage the tree, so the logic of a bt is on an entity.
-the bt entity spawns a single child (or more if parallel feature?) at a time.
-OnRun doesn't exist, because it's Trigger<OnAdd, ActionComp> as the entity is spawned.
-reporting results can be by triggering an event, and the bt entity observes. 
-it would only ever need one observer per active child (usually 1).
-reporting a result would make the bt entity despawn you.
-
-
-Actions need to eventually report a Result to their parent.
-
-If Action::spawn, the entity should trigger a result, and then we catch that and despawn it.
-
-If Action::wait, we handle the delay
-
-If Action::condition(system) we run the system and the output is the result? ie you can
-have a bevy trigger/system like test that doesn't require a spawned entity.
-
-Would still need access to the ctx to get the agent entity.
-
+A behaviour tree plugin for bevy with dynamic spawning.
 
 ```rust
-// test if the agent is in orbit around the given attractor?
-Action::test(in_orbit(attractor_entity)) 
+let npc_entity = some_character_to_control();
+
+// the tree definition
+let t = tree! {
+    Behave::Fallback => {
+        Behave::dynamic_spawn((
+            SlowAction::failing("Single Slowcoach", 2.0),
+            Name::new("Single Slowcoach failing")
+        )),
+        Behave::AlwaysFail,
+        Behave::Invert => {
+            Behave::dynamic_spawn((
+                SlowAction::succeeding("Single Slowcoach inside invert", 1.0),
+                Name::new("Single Slowcoach inside invert")
+            )),
+        },
+        Behave::dynamic_spawn((
+            SlowAction::succeeding("Single Slowcoach", 1.0),
+            Name::new("Single Slowcoach")
+        )),
+        Behave::AlwaysSucceed,
+    }
+};
+// the component
+let bt = BehaveTree::new(t);
+// spawn entity with behavetree. Make it a child of the npc entity for convenience.
+// default behaviour assumes the Parent of the tree entity is Target Entity you're controlling.
+let bt_ent = commands.spawn((Name::new("Behave tree for NPC"), bt)).set_parent(npc_entity);
 ```
 
+### Control Flow Nodes
 
+Currently supported control flow nodes:
 
+| Node          | Description                                                                |
+| ------------- | -------------------------------------------------------------------------- |
+| Sequence      | Runs children in sequence, failing if any fails, succeeding if all succeed |
+| Fallback      | Runs children in sequence until one succeeds. If all fail, this fails      |
+| Invert        | Inverts success/failure of child. Must only have one child                 |
+| AlwaysSucceed | Always succeeds                                                            |
+| AlwaysFail    | Always fails                                                               |
 
+### Task Nodes
 
+| Node         | Description                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Wait         | Waits this many seconds before Succeeding<br>Timer is ticked inside the tre, no entities are spawned.                                                                          |
+| DynamicSpawn | Spawns an entity when this node in the tree is reached, and waits for it to trigger a status report.<br>Once the entity triggers a status report, it is immediately despawned. |
+| Entity       | When this node on the tree is reached, a `BehaveCtx` is inserted.<br>The tree then waits for this entity to trigger a status report.<br>No automatic despawning.               |
 
- 
-  
