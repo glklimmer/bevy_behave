@@ -45,6 +45,7 @@ pub struct BehaveFinished(pub bool);
 // #[derive(Debug)]
 pub trait BehaveConditionTrigger: Send + Sync {
     fn trigger(&self, commands: &mut Commands, ctx: BehaveTriggerCtx);
+    fn clone_box(&self) -> Box<dyn BehaveConditionTrigger>;
 }
 
 impl<T: Clone + Send + Sync + 'static> BehaveConditionTrigger for T {
@@ -54,8 +55,17 @@ impl<T: Clone + Send + Sync + 'static> BehaveConditionTrigger for T {
             ctx,
         });
     }
+
+    fn clone_box(&self) -> Box<dyn BehaveConditionTrigger> {
+        Box::new(self.clone())
+    }
 }
 
+pub trait CloneableBehaveConditionTrigger: BehaveConditionTrigger + Clone {}
+
+impl<T: BehaveConditionTrigger + Clone> CloneableBehaveConditionTrigger for T {}
+
+#[derive(Clone)]
 pub enum Behave {
     /// Waits this many seconds before Succeeding
     Wait(f32),
@@ -516,5 +526,11 @@ fn tick_node(
             *status = Some(final_status);
             final_status
         }
+    }
+}
+
+impl Clone for Box<dyn BehaveConditionTrigger> {
+    fn clone(&self) -> Self {
+        self.clone_box()
     }
 }

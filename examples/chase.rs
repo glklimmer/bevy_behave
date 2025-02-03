@@ -31,11 +31,19 @@ fn init(mut commands: Commands) {
 
     let player = commands.spawn((Player,)).id();
 
-    let enemy = commands
+    let enemy1 = commands
         .spawn((
             Transform::from_xyz(500., 0., 0.),
             Enemy,
             VisionRadius(ENEMY_VISION_RADIUS),
+        ))
+        .id();
+
+    let enemy2 = commands
+        .spawn((
+            Transform::from_xyz(-500., 0., 0.),
+            Enemy,
+            VisionRadius(ENEMY_VISION_RADIUS / 2.0),
         ))
         .id();
 
@@ -59,9 +67,92 @@ fn init(mut commands: Commands) {
     };
 
     // default is to assume the Parent entity is the target the tree is controlling
-    commands.spawn(BehaveTree::new(tree)).set_parent(enemy);
+    commands
+        .spawn(BehaveTree::new(tree.clone()))
+        .set_parent(enemy1);
+
+    commands
+        .spawn(BehaveTree::new(tree.clone()))
+        .set_parent(enemy2);
 }
 
+#[derive(Component, Clone)]
+struct WaitUntilPlayerIsNear {
+    player: Entity,
+}
+
+#[derive(Component, Clone)]
+struct MoveTowardsPlayer {
+    player: Entity,
+    speed: f32,
+}
+
+// Wait until the player is within vision range of an enemy
+fn wait_system(
+    q: Query<(&WaitUntilPlayerIsNear, &BehaveCtx)>,
+    q_enemy_transforms: Query<(&Transform, &VisionRadius), (With<Enemy>, Without<Player>)>,
+    q_player_transforms: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    mut commands: Commands,
+) {
+    for (wait, ctx) in &q {
+        let player_transform = q_player_transforms.get(wait.player).unwrap();
+        let (enemy_transform, vision_radius) = q_enemy_transforms.get(ctx.target_entity()).unwrap();
+        let distance_to_player = enemy_transform
+            .translation
+            .xy()
+            .distance(player_transform.translation.xy());
+        if distance_to_player < vision_radius.0 {
+            commands.trigger(ctx.success());
+        }
+    }
+}
+
+// move the enemy towards the player, as long as they are still in vision range.
+// if we catch them, return Success.
+// if they move out of range, return Failure.
+fn move_system(
+    q: Query<(&MoveTowardsPlayer, &BehaveCtx)>,
+    mut q_own_transforms: Query<(&mut Transform, &VisionRadius), (With<Enemy>, Without<Player>)>,
+    q_player_transforms: Query<&Transform, (With<Player>, Without<Enemy>)>,
+    mut commands: Commands,
+    time: Res<Time>,
+) {
+    for (move_towards, ctx) in &q {
+        let player_transform = q_player_transforms.get(move_towards.player).unwrap();
+        let (mut own_transform, vision_radius) =
+            q_own_transforms.get_mut(ctx.target_entity()).unwrap();
+        let direction_to_player =
+            (player_transform.translation.xy() - own_transform.translation.xy()).normalize();
+        let movement_amount = direction_to_player * move_towards.speed * time.delta_secs();
+        own_transform.translation += movement_amount.extend(0.0);
+        let distance_to_player = own_transform
+            .translation
+            .distance(player_transform.translation);
+        if distance_to_player < 10.0 {
+            commands.trigger(ctx.success());
+        } else if distance_to_player > vision_radius.0 {
+            commands.trigger(ctx.failure());
+        }
+    }
+}
+
+// move the player using arrow keys
+fn move_player(
+    mut players: Query<&mut Transform, With<Player>>,
+    keys: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+) {
+    players.single_mut().translation += Vec3::new(
+        (keys.pressed(KeyCode::ArrowRight) as i32 - keys.pressed(KeyCode::ArrowLeft) as i32) as f32,
+        (keys.pressed(KeyCode::ArrowUp) as i32 - keys.pressed(KeyCode::ArrowDown) as i32) as f32,
+        0.,
+    )
+    .normalize_or_zero()
+        * PLAYER_SPEED
+        * time.delta_secs();
+}
+
+// render with gizmos
 fn render(
     mut gizmos: Gizmos,
     q: Query<((&Transform, Option<&VisionRadius>), Has<Enemy>, Has<Player>)>,
@@ -83,74 +174,4 @@ fn render(
             gizmos.circle(trans.translation, 10., css::GREEN);
         }
     }
-}
-
-#[derive(Component, Clone)]
-struct WaitUntilPlayerIsNear {
-    player: Entity,
-}
-
-#[derive(Component, Clone)]
-struct MoveTowardsPlayer {
-    player: Entity,
-    speed: f32,
-}
-
-fn wait_system(
-    q: Query<(&WaitUntilPlayerIsNear, &BehaveCtx)>,
-    q_enemy_transforms: Query<(&Transform, &VisionRadius), (With<Enemy>, Without<Player>)>,
-    q_player_transforms: Query<&Transform, (With<Player>, Without<Enemy>)>,
-    mut commands: Commands,
-) {
-    for (wait, ctx) in &q {
-        let player_transform = q_player_transforms.get(wait.player).unwrap();
-        let (enemy_transform, vision_radius) = q_enemy_transforms.get(ctx.target_entity()).unwrap();
-        let distance_to_player = enemy_transform
-            .translation
-            .xy()
-            .distance(player_transform.translation.xy());
-        if distance_to_player < vision_radius.0 {
-            commands.trigger(ctx.success());
-        }
-    }
-}
-
-fn move_system(
-    q: Query<(&MoveTowardsPlayer, &BehaveCtx)>,
-    mut q_own_transforms: Query<&mut Transform, (With<Enemy>, Without<Player>)>,
-    q_player_transforms: Query<&Transform, (With<Player>, Without<Enemy>)>,
-    mut commands: Commands,
-    time: Res<Time>,
-) {
-    for (move_towards, ctx) in &q {
-        let player_transform = q_player_transforms.get(move_towards.player).unwrap();
-        let mut own_transform = q_own_transforms.get_mut(ctx.target_entity()).unwrap();
-        let direction_to_player =
-            (player_transform.translation.xy() - own_transform.translation.xy()).normalize();
-        let movement_amount = direction_to_player * move_towards.speed * time.delta_secs();
-        own_transform.translation += movement_amount.extend(0.0);
-        let distance_to_player = own_transform
-            .translation
-            .distance(player_transform.translation);
-        if distance_to_player < 10.0 {
-            commands.trigger(ctx.success());
-        } else if distance_to_player > ENEMY_VISION_RADIUS {
-            commands.trigger(ctx.failure());
-        }
-    }
-}
-
-fn move_player(
-    mut players: Query<&mut Transform, With<Player>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    time: Res<Time>,
-) {
-    players.single_mut().translation += Vec3::new(
-        (keys.pressed(KeyCode::ArrowRight) as i32 - keys.pressed(KeyCode::ArrowLeft) as i32) as f32,
-        (keys.pressed(KeyCode::ArrowUp) as i32 - keys.pressed(KeyCode::ArrowDown) as i32) as f32,
-        0.,
-    )
-    .normalize_or_zero()
-        * PLAYER_SPEED
-        * time.delta_secs();
 }
