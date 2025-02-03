@@ -72,8 +72,10 @@ pub enum Behave {
     AlwaysSucceed,
     /// Always fails
     AlwaysFail,
-    /// If, then
+    /// Returns a result from a trigger
     Conditional(Box<dyn BehaveConditionTrigger>),
+    /// Loops forever
+    Forever,
 }
 
 impl Behave {
@@ -119,12 +121,15 @@ impl<T: Clone + Send + Sync> BehaveCondition<T> {
 /// One per Behave, with extra state bits.
 // #[derive(Debug)]
 pub(crate) enum BehaveNode {
+    Forever {
+        status: Option<BehaveNodeStatus>,
+    },
     Wait {
         start_time: Option<f32>,
         secs_to_wait: f32,
         status: Option<BehaveNodeStatus>,
     },
-    SpawnTask {
+    DynamicEntity {
         // None until something spawned.
         task_status: EntityTaskStatus,
         status: Option<BehaveNodeStatus>,
@@ -169,9 +174,10 @@ enum TriggerTaskStatus {
 impl BehaveNode {
     fn existing_status(&self) -> &Option<BehaveNodeStatus> {
         match self {
+            BehaveNode::Forever { status } => status,
             BehaveNode::Conditional { status, .. } => status,
             BehaveNode::Wait { status, .. } => status,
-            BehaveNode::SpawnTask { status, .. } => status,
+            BehaveNode::DynamicEntity { status, .. } => status,
             BehaveNode::SequenceFlow { status } => status,
             BehaveNode::FallbackFlow { status } => status,
             BehaveNode::Invert { status } => status,
@@ -185,9 +191,10 @@ impl std::fmt::Display for BehaveNode {
     #[rustfmt::skip]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            BehaveNode::Forever { .. } => write!(f, "Forever")?,
             BehaveNode::Conditional { .. } => write!(f, "Conditional")?,
             BehaveNode::Wait { secs_to_wait, .. } => write!(f, "Wait({secs_to_wait})")?,
-            BehaveNode::SpawnTask { task_status, .. } => write!(f, "SpawnTask({task_status:?})")?,
+            BehaveNode::DynamicEntity { task_status, .. } => write!(f, "SpawnTask({task_status:?})")?,
             BehaveNode::SequenceFlow { .. } => write!(f, "SequenceFlow")?,
             BehaveNode::FallbackFlow { .. } => write!(f, "FallbackFlow")?,
             BehaveNode::Invert { .. } => write!(f, "Invert")?,
@@ -205,8 +212,53 @@ impl std::fmt::Display for BehaveNode {
 }
 
 impl BehaveNode {
+    pub(crate) fn reset(&mut self) {
+        match self {
+            BehaveNode::Forever { status } => {
+                *status = None;
+            }
+            BehaveNode::Conditional {
+                status,
+                task_status,
+                ..
+            } => {
+                *status = None;
+                *task_status = TriggerTaskStatus::NotTriggered;
+            }
+            BehaveNode::Wait {
+                status, start_time, ..
+            } => {
+                *status = None;
+                *start_time = None;
+            }
+            BehaveNode::DynamicEntity {
+                status,
+                task_status,
+                ..
+            } => {
+                *status = None;
+                *task_status = EntityTaskStatus::NotStarted;
+            }
+            BehaveNode::SequenceFlow { status } => {
+                *status = None;
+            }
+            BehaveNode::FallbackFlow { status } => {
+                *status = None;
+            }
+            BehaveNode::Invert { status } => {
+                *status = None;
+            }
+            BehaveNode::AlwaysSucceed { status } => {
+                *status = None;
+            }
+            BehaveNode::AlwaysFail { status } => {
+                *status = None;
+            }
+        }
+    }
     pub(crate) fn new(behave: Behave) -> Self {
         match behave {
+            Behave::Forever => Self::Forever { status: None },
             Behave::Conditional(trig_fn) => Self::Conditional {
                 status: None,
                 task_status: TriggerTaskStatus::NotTriggered,
@@ -217,7 +269,7 @@ impl BehaveNode {
                 secs_to_wait,
                 status: None,
             },
-            Behave::DynamicEntity(bundle) => Self::SpawnTask {
+            Behave::DynamicEntity(bundle) => Self::DynamicEntity {
                 task_status: EntityTaskStatus::NotStarted,
                 status: None,
                 bundle,
@@ -228,6 +280,17 @@ impl BehaveNode {
             Behave::AlwaysSucceed => Self::AlwaysSucceed { status: None },
             Behave::AlwaysFail => Self::AlwaysFail { status: None },
         }
+    }
+}
+
+fn reset_descendants(n: &mut NodeMut<BehaveNode>) {
+    // info!("Restting node: {:?}", n.id());
+    n.value().reset();
+    if let Some(mut sibling) = n.next_sibling() {
+        reset_descendants(&mut sibling);
+    }
+    if let Some(mut child) = n.first_child() {
+        reset_descendants(&mut child);
     }
 }
 
@@ -250,6 +313,24 @@ fn tick_node(
     }
     let task_node = n.id();
     match n.value() {
+        Forever { .. } => {
+            let Forever { status } = n.value() else {
+                unreachable!("Must be a Forever");
+            };
+            *status = Some(BehaveNodeStatus::Running);
+            let mut only_child = n.first_child().expect("Forever nodes must have a child");
+            if only_child.has_siblings() {
+                panic!("Forever nodes must have a single child, not multiple children");
+            }
+            match tick_node(&mut only_child, time, ecmd, target_entity) {
+                BehaveNodeStatus::Success | BehaveNodeStatus::Failure => {
+                    // reset so we can run it again next tick
+                    reset_descendants(&mut only_child);
+                    BehaveNodeStatus::Running
+                }
+                other => other,
+            }
+        }
         Conditional {
             task_status: task_status @ TriggerTaskStatus::NotTriggered,
             status,
@@ -335,7 +416,7 @@ fn tick_node(
             BehaveNodeStatus::Running
         }
         // spawn a new entity for this task
-        SpawnTask {
+        DynamicEntity {
             task_status: task_status @ EntityTaskStatus::NotStarted,
             status,
             bundle,
@@ -357,15 +438,15 @@ fn tick_node(
             BehaveNodeStatus::AwaitingTrigger
         }
         #[rustfmt::skip]
-        SpawnTask{ task_status: EntityTaskStatus::Started(_), .. } => unreachable!("Short circuit should prevent this while AwaitingTrigger"),
+        DynamicEntity{ task_status: EntityTaskStatus::Started(_), .. } => unreachable!("Short circuit should prevent this while AwaitingTrigger"),
         // this is when a trigger has reported a result, and we need to process it and update status
         #[rustfmt::skip]
-        SpawnTask {task_status: EntityTaskStatus::Complete(true), status, ..} => {
+        DynamicEntity {task_status: EntityTaskStatus::Complete(true), status, ..} => {
             *status = Some(BehaveNodeStatus::Success);
             BehaveNodeStatus::Success
         }
         #[rustfmt::skip]
-        SpawnTask {task_status: EntityTaskStatus::Complete(false), status, ..} => {
+        DynamicEntity {task_status: EntityTaskStatus::Complete(false), status, ..} => {
             *status = Some(BehaveNodeStatus::Failure);
             BehaveNodeStatus::Failure
         }

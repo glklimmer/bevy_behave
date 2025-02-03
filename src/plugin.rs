@@ -144,11 +144,11 @@ fn on_bt_trigger_status_report(
         );
         return;
     };
-    info!("trigger status report: {:?}", trigger);
-    info!(
-        "Removing awaiting marker on bt entity {:?}",
-        ctx.behave_entity()
-    );
+    // info!("trigger status report: {:?}", trigger);
+    // info!(
+    //     "Removing awaiting marker on bt entity {:?}",
+    //     ctx.behave_entity()
+    // );
     // remove the waiting trigger component, so the tree will be ticked next time.
     commands
         .entity(ctx.behave_entity())
@@ -215,18 +215,18 @@ fn tick_trees(
         };
         let mut ecmd = commands.entity(entity);
         let res = bt.tick(&time, &mut ecmd, target_entity);
-        info!("\n{}", *bt);
+        // info!("\n{}", *bt);
         match res {
             BehaveNodeStatus::AwaitingTrigger => {
-                info!("tick_trees -> {:?}", res);
+                // info!("tick_trees -> {:?}", res);
                 ecmd.insert(BehaveAwaitingTrigger);
             }
             BehaveNodeStatus::Success => {
-                info!("tick_trees -> {:?}", res);
+                // info!("tick_trees -> {:?}", res);
                 ecmd.insert(BehaveFinished(true));
             }
             BehaveNodeStatus::Failure => {
-                info!("tick_trees -> {:?}", res);
+                // info!("tick_trees -> {:?}", res);
                 ecmd.insert(BehaveFinished(false));
             }
             BehaveNodeStatus::Running => {}
@@ -291,7 +291,7 @@ impl BehaveTree {
             .tree
             .nodes()
             .find(|n| {
-                matches!(n.value(), BehaveNode::SpawnTask {
+                matches!(n.value(), BehaveNode::DynamicEntity {
                     task_status: EntityTaskStatus::Started(e),
                     ..
                 } if *e == entity)
@@ -306,7 +306,7 @@ impl BehaveTree {
         // we don't directly set the status, we set the task status so that the next tick
         // can update the status and progress the tree
         match val {
-            BehaveNode::SpawnTask { task_status, .. } => {
+            BehaveNode::DynamicEntity { task_status, .. } => {
                 // info!("Setting spawn task success to {:?}", success);
                 *task_status = EntityTaskStatus::Complete(success);
             }

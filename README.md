@@ -6,6 +6,7 @@ When an action (leaf node / task node) in the behaviour tree runs, it will spawn
 the components you specified in the tree definition. The tree then waits for this entity to
 trigger a status report, at which point the entity will be despawned.
 
+Conditionals are implemented with observers, see below.
 
 
 ```rust
