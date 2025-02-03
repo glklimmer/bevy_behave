@@ -73,7 +73,7 @@ impl BehaveCtx {
     }
 }
 
-// contains the bt entity to update
+/// Trigger used to signal the completion of a task
 #[derive(Debug, Event)]
 pub enum BehaveStatusReport {
     Success(BehaveCtx),
@@ -89,14 +89,14 @@ impl BehaveStatusReport {
     }
 }
 
-// when we recieve a status report, we need to set the status of the node in the tree,
-// but wait until the next tick to do anything.
+// when we recieve a status report, we add the result to the tree node, so it's processed the
+// next time the tree ticks.
 fn on_bt_status_report(
     trigger: Trigger<BehaveStatusReport>,
     mut commands: Commands,
     mut q_bt: Query<&mut BehaveTree, (With<BehaveAwaitingTrigger>, Without<BehaveFinished>)>,
 ) {
-    info!("Got status report: {:?}", trigger);
+    // info!("Got status report: {:?}", trigger);
     let ctx = trigger.event().ctx();
     let Ok(mut bt) = q_bt.get_mut(ctx.bt_entity) else {
         error!("Failed to get bt entity on {}", trigger.entity());
@@ -110,10 +110,10 @@ fn on_bt_status_report(
     commands.entity(ctx.task_entity).try_despawn_recursive();
     match trigger.event() {
         BehaveStatusReport::Success(ctx) => {
-            bt.set_node_result(ctx.task_entity, BehaveNodeStatus::Success);
+            bt.set_entity_task_success(ctx.task_entity, true);
         }
         BehaveStatusReport::Failure(ctx) => {
-            bt.set_node_result(ctx.task_entity, BehaveNodeStatus::Failure);
+            bt.set_entity_task_success(ctx.task_entity, false);
         }
     }
 }
@@ -141,17 +141,18 @@ fn tick_trees(
         };
         let mut ecmd = commands.entity(entity);
         let res = bt.tick(&time, &mut ecmd, target_entity);
+        info!("\n{}", *bt);
         match res {
             BehaveNodeStatus::AwaitingTrigger => {
-                info!("tick_trees -> {:?}", res);
+                // info!("tick_trees -> {:?}", res);
                 ecmd.insert(BehaveAwaitingTrigger);
             }
             BehaveNodeStatus::Success => {
-                info!("tick_trees -> {:?}", res);
+                // info!("tick_trees -> {:?}", res);
                 ecmd.insert(BehaveFinished(true));
             }
             BehaveNodeStatus::Failure => {
-                info!("tick_trees -> {:?}", res);
+                // info!("tick_trees -> {:?}", res);
                 ecmd.insert(BehaveFinished(false));
             }
             BehaveNodeStatus::Running => {}
@@ -159,23 +160,43 @@ fn tick_trees(
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 #[require(BehaveTargetEntity)]
 pub struct BehaveTree {
     tree: Tree<BehaveNode>,
+}
+impl std::fmt::Display for BehaveTree {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        walk_tree(self.tree.root(), 0, f)?;
+        Ok(())
+    }
+}
+
+fn walk_tree(
+    node: NodeRef<BehaveNode>,
+    depth: usize,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    for _ in 0..(depth * 2) {
+        write!(f, " ")?;
+    }
+    write!(f, "* ")?;
+    writeln!(f, "{}", node.value())?;
+    for child in node.children() {
+        walk_tree(child, depth + 1, f)?;
+    }
+    Ok(())
 }
 
 impl BehaveTree {
     pub fn new(tree: Tree<Behave>) -> Self {
         // convert to internal BehaviourNode tree
         let tree = tree.map(BehaveNode::new);
-        info!("BehaviourTree. New tree: {:?}", tree);
         Self {
             tree,
             // entity: Entity::PLACEHOLDER,
         }
     }
-
     // fn set_entity(&mut self, entity: Entity) {
     //     self.entity = entity;
     // }
@@ -190,16 +211,16 @@ impl BehaveTree {
         tick_node(&mut node, time, ecmd, target_entity)
     }
     // sets the status of a spawn task node, so it should progress next tick.
-    fn set_node_result(&mut self, entity: Entity, new_status: BehaveNodeStatus) {
+    fn set_entity_task_success(&mut self, entity: Entity, success: bool) {
         // find the node that is a SpawnTask matching this entity:
         let node_id = self
             .tree
             .nodes()
-            .find(|n| match n.value() {
-                BehaveNode::SpawnTask {
-                    entity: Some(e), ..
-                } => *e == entity,
-                _ => false,
+            .find(|n| {
+                matches!(n.value(), BehaveNode::SpawnTask {
+                    task_status: EntityTaskStatus::Started(e),
+                    ..
+                } if *e == entity)
             })
             .map(|n| n.id());
         let Some(node_id) = node_id else {
@@ -208,10 +229,12 @@ impl BehaveTree {
         };
         let mut node = self.tree.get_mut(node_id).unwrap();
         let val = node.value();
+        // we don't directly set the status, we set the task status so that the next tick
+        // can update the status and progress the tree
         match val {
-            BehaveNode::SpawnTask { status, .. } => {
-                info!("Setting spawn task status to {:?}", new_status);
-                *status = Some(new_status);
+            BehaveNode::SpawnTask { task_status, .. } => {
+                // info!("Setting spawn task success to {:?}", success);
+                *task_status = EntityTaskStatus::Complete(success);
             }
             _ => {
                 warn!("Given node result for a non-spawntask node?");

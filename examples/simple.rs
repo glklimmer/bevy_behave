@@ -1,13 +1,5 @@
+use bevy::prelude::*;
 use bevy_behave::prelude::*;
-use std::time::Duration;
-
-use bevy::{prelude::*, time::common_conditions::on_timer};
-
-#[derive(Component, Clone)]
-struct CompA;
-
-#[derive(Component, Clone)]
-struct CompB(f32);
 
 fn main() {
     let mut app = App::new();
@@ -15,23 +7,40 @@ fn main() {
     app.add_systems(Startup, insert_bt);
     app.add_plugins(BehavePlugin::default());
     app.add_plugins(slow_action_plugin);
+    app.add_observer(on_tree_finished);
     app.run();
+}
+
+fn on_tree_finished(
+    trigger: Trigger<OnAdd, BehaveFinished>,
+    q: Query<(&BehaveFinished, &BehaveTree)>,
+) {
+    let (result, tree) = q.get(trigger.entity()).unwrap();
+    info!("Tree finished: {result:?} tree = \n{tree}");
 }
 
 fn insert_bt(mut commands: Commands) {
     let parent = commands.spawn(Name::new("parent")).id();
     info!("Parent : {parent}");
     let t = tree! {
-        Behave::SequenceFlow => {
-            Behave::Wait(1.0),
-            Behave::spawn_entity((
-                SlowAction::succeeding("Single Slowcoach", 1.0),
-                Name::new("Single Slowcoach")
-            )),
+        Behave::FallbackFlow => {
+            // Behave::Wait(1.0),
             Behave::spawn_entity((
                 SlowAction::failing("Single Slowcoach", 2.0),
                 Name::new("Single Slowcoach failing")
             )),
+            Behave::AlwaysFail,
+            Behave::Invert => {
+                Behave::spawn_entity((
+                    SlowAction::succeeding("Single Slowcoach inside invert", 1.0),
+                    Name::new("Single Slowcoach inside invert")
+                )),
+            },
+            Behave::spawn_entity((
+                SlowAction::succeeding("Single Slowcoach", 1.0),
+                Name::new("Single Slowcoach")
+            )),
+            Behave::AlwaysSucceed,
         }
     };
 

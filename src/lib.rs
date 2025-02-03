@@ -49,7 +49,14 @@ pub enum Behave {
     DynamicEntity(DynamicBundel),
     /// Runs children in sequence, failing if any fails, succeeding if all succeed
     SequenceFlow,
-    // FallbackFlow(Vec<Behaviour>),
+    /// Runs children in sequence until one succeeds. If all fail, this fails.
+    FallbackFlow,
+    /// Inverts success/failure of child. Must only have one child.
+    Invert,
+    /// Always succeeds
+    AlwaysSucceed,
+    /// Always fails
+    AlwaysFail,
 }
 
 impl Behave {
@@ -65,21 +72,72 @@ pub(crate) enum BehaveNode {
     Wait {
         start_time: Option<f32>,
         secs_to_wait: f32,
+        status: Option<BehaveNodeStatus>,
     },
     SpawnTask {
         // None until something spawned.
-        entity: Option<Entity>,
+        task_status: EntityTaskStatus,
         status: Option<BehaveNodeStatus>,
         bundle: DynamicBundel,
     },
     SequenceFlow {
         status: Option<BehaveNodeStatus>,
     },
-    // FallbackFlow {
-    //     behaviours: Vec<Behaviour>,
-    //     current_index: usize,
-    //     current_state: Box<BehaviourNode>,
-    // },
+    FallbackFlow {
+        status: Option<BehaveNodeStatus>,
+    },
+    Invert {
+        status: Option<BehaveNodeStatus>,
+    },
+    AlwaysSucceed {
+        status: Option<BehaveNodeStatus>,
+    },
+    AlwaysFail {
+        status: Option<BehaveNodeStatus>,
+    },
+}
+
+#[derive(Clone, Debug)]
+enum EntityTaskStatus {
+    NotStarted,
+    Started(Entity),
+    Complete(bool),
+}
+
+impl BehaveNode {
+    fn existing_status(&self) -> &Option<BehaveNodeStatus> {
+        match self {
+            BehaveNode::Wait { status, .. } => status,
+            BehaveNode::SpawnTask { status, .. } => status,
+            BehaveNode::SequenceFlow { status } => status,
+            BehaveNode::FallbackFlow { status } => status,
+            BehaveNode::Invert { status } => status,
+            BehaveNode::AlwaysSucceed { status } => status,
+            BehaveNode::AlwaysFail { status } => status,
+        }
+    }
+}
+
+impl std::fmt::Display for BehaveNode {
+    #[rustfmt::skip]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BehaveNode::Wait { secs_to_wait, .. } => write!(f, "Wait({secs_to_wait})")?,
+            BehaveNode::SpawnTask { task_status, .. } => write!(f, "SpawnTask({task_status:?})")?,
+            BehaveNode::SequenceFlow { .. } => write!(f, "SequenceFlow")?,
+            BehaveNode::FallbackFlow { .. } => write!(f, "FallbackFlow")?,
+            BehaveNode::Invert { .. } => write!(f, "Invert")?,
+            BehaveNode::AlwaysSucceed { .. } => write!(f, "AlwaysSucceed")?,
+            BehaveNode::AlwaysFail { .. } => write!(f, "AlwaysFail")?,
+        }
+        match self.existing_status() {
+            Some(BehaveNodeStatus::Success) => write!(f, " --> ✅"),
+            Some(BehaveNodeStatus::Failure) => write!(f, " --> ❌"),
+            Some(BehaveNodeStatus::Running) => write!(f, " --> ⏳"),
+            Some(BehaveNodeStatus::AwaitingTrigger) => write!(f, " --> ⏳"),
+            _ => Ok(()),
+        }
+    }
 }
 
 impl BehaveNode {
@@ -88,18 +146,18 @@ impl BehaveNode {
             Behave::Wait(secs_to_wait) => Self::Wait {
                 start_time: None,
                 secs_to_wait,
+                status: None,
             },
             Behave::DynamicEntity(bundle) => Self::SpawnTask {
-                entity: None,
+                task_status: EntityTaskStatus::NotStarted,
                 status: None,
                 bundle,
             },
             Behave::SequenceFlow => Self::SequenceFlow { status: None },
-            // Behaviour::FallbackFlow(behaviours) => Self::FallbackFlow {
-            //     current_index: 0,
-            //     current_state: Box::new(Self::new(behaviours[0].clone())),
-            //     behaviours,
-            // },
+            Behave::FallbackFlow => Self::FallbackFlow { status: None },
+            Behave::Invert => Self::Invert { status: None },
+            Behave::AlwaysSucceed => Self::AlwaysSucceed { status: None },
+            Behave::AlwaysFail => Self::AlwaysFail { status: None },
         }
     }
 }
@@ -112,41 +170,70 @@ fn tick_node(
 ) -> BehaveNodeStatus {
     let bt_entity = ecmd.id();
     use BehaveNode::*;
-    info!("tick_node: {:?} = {:?}", n.id(), n.value());
+    debug!("tick_node: {:?} = {:?}", n.id(), n.value());
+    // short circuit nodes that have already got a result, or are blocked waiting for a trigger
+    match n.value().existing_status() {
+        None => {}
+        Some(BehaveNodeStatus::Running) => {}
+        Some(BehaveNodeStatus::AwaitingTrigger) => {}
+        Some(BehaveNodeStatus::Success) => return BehaveNodeStatus::Success,
+        Some(BehaveNodeStatus::Failure) => return BehaveNodeStatus::Failure,
+    }
     match n.value() {
+        Invert { .. } => {
+            let mut only_child = n.first_child().expect("Invert nodes must have a child");
+            if only_child.has_siblings() {
+                panic!("Invert nodes must have a single child, not multiple children");
+            }
+            let res = match tick_node(&mut only_child, time, ecmd, target_entity) {
+                BehaveNodeStatus::Success => BehaveNodeStatus::Failure, // swapped
+                BehaveNodeStatus::Failure => BehaveNodeStatus::Success, // swapped
+                BehaveNodeStatus::Running => BehaveNodeStatus::Running,
+                BehaveNodeStatus::AwaitingTrigger => BehaveNodeStatus::AwaitingTrigger,
+            };
+            let Invert { status } = n.value() else {
+                unreachable!("Must be an Invert");
+            };
+            *status = Some(res);
+            res
+        }
+        AlwaysSucceed { status } => {
+            *status = Some(BehaveNodeStatus::Success);
+            BehaveNodeStatus::Success
+        }
+        AlwaysFail { status } => {
+            *status = Some(BehaveNodeStatus::Failure);
+            BehaveNodeStatus::Failure
+        }
         // start waiting
         Wait {
             start_time: start_time @ None,
-            secs_to_wait: _,
+            status,
+            ..
         } => {
             info!("Starting wait");
             *start_time = Some(time.elapsed_secs());
+            *status = Some(BehaveNodeStatus::Running);
             BehaveNodeStatus::Running
         }
         // continue waiting
         Wait {
             start_time: Some(start_time),
             secs_to_wait,
+            status,
         } => {
             // info!("Waiting");
             let elapsed = time.elapsed_secs() - *start_time;
             if elapsed > *secs_to_wait {
+                *status = Some(BehaveNodeStatus::Success);
                 return BehaveNodeStatus::Success;
             }
             BehaveNodeStatus::Running
         }
-        // a spawntask with a status has been started already:
-        SpawnTask {
-            status: Some(status),
-            ..
-        } => {
-            info!("SpawnTask with existing status: {:?}", status);
-            *status
-        }
         // spawn a new entity for this task
         SpawnTask {
-            status: status @ None,
-            entity,
+            task_status: task_status @ EntityTaskStatus::NotStarted,
+            status,
             bundle,
         } => {
             let id = ecmd.commands().spawn(()).id();
@@ -161,21 +248,22 @@ fn tick_node(
                 .dyn_insert(bundle.clone());
             info!("Spawn task, Spawning entity: {id:?}");
             ecmd.add_child(id);
-            *entity = Some(id);
+            *task_status = EntityTaskStatus::Started(id);
             *status = Some(BehaveNodeStatus::AwaitingTrigger);
             BehaveNodeStatus::AwaitingTrigger
         }
-        // run a sequence of behaviours
-        SequenceFlow {
-            status: Some(status),
-            ..
-        } if matches!(
-            status,
-            BehaveNodeStatus::Success | BehaveNodeStatus::Failure
-        ) =>
-        {
-            info!("SequenceFlow. Returning existing status: {:?}", status);
-            *status
+        #[rustfmt::skip]
+        SpawnTask{ task_status: EntityTaskStatus::Started(_), .. } => unreachable!("Short circuit should prevent this while AwaitingTrigger"),
+        // this is when a trigger has reported a result, and we need to process it and update status
+        #[rustfmt::skip]
+        SpawnTask {task_status: EntityTaskStatus::Complete(true), status, ..} => {
+            *status = Some(BehaveNodeStatus::Success);
+            BehaveNodeStatus::Success
+        }
+        #[rustfmt::skip]
+        SpawnTask {task_status: EntityTaskStatus::Complete(false), status, ..} => {
+            *status = Some(BehaveNodeStatus::Failure);
+            BehaveNodeStatus::Failure
         }
         // don't bind any fields here because we need to mutably borrow the node again
         SequenceFlow { .. } => {
@@ -188,18 +276,6 @@ fn tick_node(
             let mut final_status;
             loop {
                 match tick_node(&mut child, time, ecmd, target_entity) {
-                    BehaveNodeStatus::AwaitingTrigger => {
-                        final_status = BehaveNodeStatus::AwaitingTrigger;
-                        break;
-                    }
-                    BehaveNodeStatus::Running => {
-                        final_status = BehaveNodeStatus::Running;
-                        break;
-                    }
-                    BehaveNodeStatus::Failure => {
-                        final_status = BehaveNodeStatus::Failure;
-                        break;
-                    }
                     BehaveNodeStatus::Success => {
                         final_status = BehaveNodeStatus::Success;
                         if let Ok(next_child) = child.into_next_sibling() {
@@ -209,12 +285,49 @@ fn tick_node(
                             break;
                         }
                     }
+                    // A non-success state just gets bubbled up to the parent
+                    other => {
+                        final_status = other;
+                        break;
+                    }
                 }
             }
             let SequenceFlow { status, .. } = n.value() else {
                 unreachable!("Must be a SequenceFlow");
             };
-            // info!("SequenceFlow. Setting status to {:?}", final_status);
+            *status = Some(final_status);
+            final_status
+        }
+
+        FallbackFlow { .. } => {
+            let Some(mut child) = n.first_child() else {
+                warn!("FallbackFlow with no children, returning success anyway");
+                return BehaveNodeStatus::Success;
+            };
+
+            let mut final_status;
+            loop {
+                match tick_node(&mut child, time, ecmd, target_entity) {
+                    BehaveNodeStatus::Failure => {
+                        // a child fails, try the next one, or if no more children, we failed.
+                        final_status = BehaveNodeStatus::Failure;
+                        if let Ok(next_child) = child.into_next_sibling() {
+                            child = next_child;
+                            continue;
+                        } else {
+                            break;
+                        }
+                    }
+                    // A non-failure state just gets bubbled up to the parent
+                    other => {
+                        final_status = other;
+                        break;
+                    }
+                }
+            }
+            let FallbackFlow { status, .. } = n.value() else {
+                unreachable!("Must be a FallbackFlow");
+            };
             *status = Some(final_status);
             final_status
         }
