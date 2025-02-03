@@ -1,4 +1,6 @@
-use bevy::prelude::*;
+use std::any::TypeId;
+
+use bevy::{prelude::*, reflect::Reflectable};
 use ego_tree::*;
 
 pub mod dyn_bundle;
@@ -33,8 +35,6 @@ struct BehaveAwaitingTrigger;
 #[derive(Component, Reflect, Debug)]
 pub struct BehaveFinished(pub bool);
 
-pub type BoxedConditionSystem = Box<dyn System<In = In<BehaveCtx>, Out = bool>>;
-
 /// A behaviour added to the tree by a user, which we convert to a a BehaviourNode tree internally
 /// to run the tree. This is the template of the behaviour without all the internal runtime state.
 ///
@@ -42,7 +42,20 @@ pub type BoxedConditionSystem = Box<dyn System<In = In<BehaveCtx>, Out = bool>>;
 /// although this probably makes it hard to load the tree def from an asset file?
 ///
 /// TODO: could have an existing entity task too, that we insert a Running component on to start it.
-#[derive(Debug)]
+// #[derive(Debug)]
+pub trait BehaveConditionTrigger: Send + Sync {
+    fn trigger(&self, commands: &mut Commands, ctx: BehaveTriggerCtx);
+}
+
+impl<T: Clone + Send + Sync + 'static> BehaveConditionTrigger for T {
+    fn trigger(&self, commands: &mut Commands, ctx: BehaveTriggerCtx) {
+        commands.trigger(BehaveCondition::<T> {
+            value: self.clone(),
+            ctx,
+        });
+    }
+}
+
 pub enum Behave {
     /// Waits this many seconds before Succeeding
     Wait(f32),
@@ -60,21 +73,51 @@ pub enum Behave {
     /// Always fails
     AlwaysFail,
     /// If, then
-    Conditional(BoxedConditionSystem),
+    Conditional(Box<dyn BehaveConditionTrigger>),
 }
 
 impl Behave {
     pub fn dynamic_spawn<T: Bundle + Clone>(bundle: T) -> Behave {
         Behave::DynamicEntity(DynamicBundel::new(bundle))
     }
-    pub fn conditional<Marker>(system: impl IntoSystem<In<BehaveCtx>, bool, Marker>) -> Behave {
-        Behave::Conditional(Box::new(IntoSystem::into_system(system)))
+    pub fn conditional<T: Clone + Send + Sync + 'static>(value: T) -> Self {
+        Behave::Conditional(Box::new(value))
     }
 }
 
+/// A wrapper around a user-provided type, which we trigger to test a condition.
+#[derive(Event, Debug, Clone)]
+pub struct BehaveCondition<T: Clone + Send + Sync> {
+    pub(crate) value: T,
+    pub(crate) ctx: BehaveTriggerCtx,
+}
+
+impl<T: Clone + Send + Sync> BehaveCondition<T> {
+    pub fn ctx(&self) -> &BehaveTriggerCtx {
+        &self.ctx
+    }
+    pub fn value(&self) -> &T {
+        &self.value
+    }
+}
+
+// pub struct BehaveConditional<const ID: &'static str>(Box<dyn Reflect>);
+
+// pub trait BehaveCondition {
+//     fn id() -> &'static str;
+// }
+
+// #[derive(Reflect)]
+// pub struct DistCond(f32);
+// impl BehaveCondition for DistCond {
+//     fn id() -> &'static str {
+//         "DistCond"
+//     }
+// }
+
 /// A state wraps the behaviour, and is the node in our internal tree representation of the behaviour tree
 /// One per Behave, with extra state bits.
-#[derive(Debug)]
+// #[derive(Debug)]
 pub(crate) enum BehaveNode {
     Wait {
         start_time: Option<f32>,
@@ -104,7 +147,8 @@ pub(crate) enum BehaveNode {
     },
     Conditional {
         status: Option<BehaveNodeStatus>,
-        system: BoxedConditionSystem,
+        task_status: TriggerTaskStatus,
+        trigger: Box<dyn BehaveConditionTrigger>,
     },
 }
 
@@ -112,6 +156,13 @@ pub(crate) enum BehaveNode {
 enum EntityTaskStatus {
     NotStarted,
     Started(Entity),
+    Complete(bool),
+}
+
+#[derive(Clone, Debug)]
+enum TriggerTaskStatus {
+    NotTriggered,
+    Triggered,
     Complete(bool),
 }
 
@@ -156,7 +207,11 @@ impl std::fmt::Display for BehaveNode {
 impl BehaveNode {
     pub(crate) fn new(behave: Behave) -> Self {
         match behave {
-            Behave::Conditional(_) => panic!("fooo"),
+            Behave::Conditional(trig_fn) => Self::Conditional {
+                status: None,
+                task_status: TriggerTaskStatus::NotTriggered,
+                trigger: trig_fn,
+            },
             Behave::Wait(secs_to_wait) => Self::Wait {
                 start_time: None,
                 secs_to_wait,
@@ -184,7 +239,7 @@ fn tick_node(
 ) -> BehaveNodeStatus {
     let bt_entity = ecmd.id();
     use BehaveNode::*;
-    debug!("tick_node: {:?} = {:?}", n.id(), n.value());
+    debug!("tick_node: {:?} = {}", n.id(), n.value());
     // short circuit nodes that have already got a result, or are blocked waiting for a trigger
     match n.value().existing_status() {
         None => {}
@@ -193,8 +248,42 @@ fn tick_node(
         Some(BehaveNodeStatus::Success) => return BehaveNodeStatus::Success,
         Some(BehaveNodeStatus::Failure) => return BehaveNodeStatus::Failure,
     }
+    let task_node = n.id();
     match n.value() {
-        Conditional { status, system } => BehaveNodeStatus::Running,
+        Conditional {
+            task_status: task_status @ TriggerTaskStatus::NotTriggered,
+            status,
+            trigger,
+        } => {
+            trigger.trigger(
+                &mut ecmd.commands(),
+                BehaveTriggerCtx {
+                    bt_entity,
+                    task_node,
+                    target_entity,
+                },
+            );
+            // Don't use AwaitingTrigger for this, because of ordering issues..
+            // the trigger response arrives BEFORE we insert the BehaveAwaitingTrigger component,
+            // so the trigger response handler can't remove it, so it never ticks.
+            *task_status = TriggerTaskStatus::Triggered;
+            *status = Some(BehaveNodeStatus::Running);
+            BehaveNodeStatus::Running
+        }
+        #[rustfmt::skip]
+        Conditional {task_status: TriggerTaskStatus::Complete(true), status, ..} => {
+            *status = Some(BehaveNodeStatus::Success);
+            BehaveNodeStatus::Success
+        }
+        #[rustfmt::skip]
+        Conditional {task_status: TriggerTaskStatus::Complete(false), status, ..} => {
+            *status = Some(BehaveNodeStatus::Failure);
+            BehaveNodeStatus::Failure
+        }
+        Conditional {
+            task_status: TriggerTaskStatus::Triggered,
+            ..
+        } => unreachable!("Should have short circuited while awiaint trigger"),
         Invert { .. } => {
             let mut only_child = n.first_child().expect("Invert nodes must have a child");
             if only_child.has_siblings() {

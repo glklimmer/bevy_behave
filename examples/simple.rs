@@ -1,5 +1,9 @@
-use bevy::prelude::*;
-use bevy_behave::prelude::*;
+use bevy::{
+    prelude::*,
+    reflect::serde::{ReflectDeserializer, ReflectSerializer},
+    scene::ron,
+};
+use bevy_behave::{prelude::*, BehaveCondition};
 
 fn main() {
     let mut app = App::new();
@@ -8,6 +12,8 @@ fn main() {
     app.add_plugins(BehavePlugin::default());
     app.add_plugins(slow_action_plugin);
     app.add_observer(on_tree_finished);
+    // app.register_type::<MyCond>();
+    app.add_observer(on_my_cond);
     app.run();
 }
 
@@ -17,6 +23,25 @@ fn on_tree_finished(
 ) {
     let (result, tree) = q.get(trigger.entity()).unwrap();
     info!("Tree finished: {result:?} tree = \n{tree}");
+}
+
+#[derive(Debug, Reflect, Clone, Event)]
+pub struct MyTest {
+    foo: f32,
+}
+
+fn on_my_cond(trigger: Trigger<BehaveCondition<MyTest>>, mut commands: Commands) {
+    let ev = trigger.event();
+    info!("TRIG {ev:?}");
+    let ctx = trigger.event().ctx();
+    let response = ctx.success();
+    info!("Triggering response: {response:?}");
+    commands.trigger(response);
+}
+
+#[derive(Event, Copy, Clone)]
+pub struct MyCond {
+    foo: f32,
 }
 
 fn insert_bt(mut commands: Commands) {
@@ -35,6 +60,9 @@ fn insert_bt(mut commands: Commands) {
                     Name::new("Single Slowcoach inside invert")
                 )),
             },
+            Behave::Invert => {
+                Behave::conditional(MyTest { foo: 3.1 }),
+            },
             Behave::dynamic_spawn((
                 SlowAction::succeeding("Single Slowcoach", 1.0),
                 Name::new("Single Slowcoach")
@@ -46,7 +74,9 @@ fn insert_bt(mut commands: Commands) {
     let bt = BehaveTree::new(t);
     let bt_ent = commands
         .spawn((Name::new("bt entity"), bt))
-        .set_parent(parent);
+        .set_parent(parent)
+        .id();
+    warn!("BT ENT {bt_ent}");
 }
 
 #[derive(Component, Debug, Clone)]

@@ -32,6 +32,7 @@ impl Plugin for BehavePlugin {
         app.configure_sets(self.schedule, BehaveSet);
         app.add_systems(self.schedule, tick_trees.in_set(BehaveSet));
         app.add_observer(on_bt_status_report);
+        app.add_observer(on_bt_trigger_status_report);
     }
 }
 
@@ -73,11 +74,51 @@ impl BehaveCtx {
     }
 }
 
-/// Trigger used to signal the completion of a task
+#[derive(Debug, Clone, Copy)]
+pub struct BehaveTriggerCtx {
+    pub(crate) bt_entity: Entity,
+    pub(crate) task_node: NodeId,
+    pub(crate) target_entity: Entity,
+}
+impl BehaveTriggerCtx {
+    pub fn target_entity(&self) -> Entity {
+        self.target_entity
+    }
+    pub fn behave_entity(&self) -> Entity {
+        self.bt_entity
+    }
+    pub(crate) fn task_node(&self) -> NodeId {
+        self.task_node
+    }
+    pub fn success(&self) -> BehaveTriggerStatusReport {
+        BehaveTriggerStatusReport::Success(*self)
+    }
+    pub fn failure(&self) -> BehaveTriggerStatusReport {
+        BehaveTriggerStatusReport::Failure(*self)
+    }
+}
+
+/// Trigger used to signal the completion of a spawn entity task
 #[derive(Debug, Event)]
 pub enum BehaveStatusReport {
     Success(BehaveCtx),
     Failure(BehaveCtx),
+}
+
+/// Trigger used to signal the completion of a trigger condition task
+#[derive(Debug, Event)]
+pub enum BehaveTriggerStatusReport {
+    Success(BehaveTriggerCtx),
+    Failure(BehaveTriggerCtx),
+}
+
+impl BehaveTriggerStatusReport {
+    pub fn ctx(&self) -> &BehaveTriggerCtx {
+        match self {
+            BehaveTriggerStatusReport::Success(ctx) => ctx,
+            BehaveTriggerStatusReport::Failure(ctx) => ctx,
+        }
+    }
 }
 
 impl BehaveStatusReport {
@@ -85,6 +126,39 @@ impl BehaveStatusReport {
         match self {
             BehaveStatusReport::Success(ctx) => ctx,
             BehaveStatusReport::Failure(ctx) => ctx,
+        }
+    }
+}
+
+fn on_bt_trigger_status_report(
+    trigger: Trigger<BehaveTriggerStatusReport>,
+    mut q_bt: Query<&mut BehaveTree, Without<BehaveFinished>>,
+    mut commands: Commands,
+) {
+    let ev = trigger.event();
+    let ctx = ev.ctx();
+    let Ok(mut bt) = q_bt.get_mut(ctx.behave_entity()) else {
+        warn!(
+            "Trigger status reported for unknown entity: {:?}",
+            ctx.behave_entity()
+        );
+        return;
+    };
+    info!("trigger status report: {:?}", trigger);
+    info!(
+        "Removing awaiting marker on bt entity {:?}",
+        ctx.behave_entity()
+    );
+    // remove the waiting trigger component, so the tree will be ticked next time.
+    commands
+        .entity(ctx.behave_entity())
+        .remove::<BehaveAwaitingTrigger>();
+    match *ev {
+        BehaveTriggerStatusReport::Success(ctx) => {
+            bt.set_node_task_success(ctx.task_node(), true);
+        }
+        BehaveTriggerStatusReport::Failure(ctx) => {
+            bt.set_node_task_success(ctx.task_node(), false);
         }
     }
 }
@@ -144,15 +218,15 @@ fn tick_trees(
         info!("\n{}", *bt);
         match res {
             BehaveNodeStatus::AwaitingTrigger => {
-                // info!("tick_trees -> {:?}", res);
+                info!("tick_trees -> {:?}", res);
                 ecmd.insert(BehaveAwaitingTrigger);
             }
             BehaveNodeStatus::Success => {
-                // info!("tick_trees -> {:?}", res);
+                info!("tick_trees -> {:?}", res);
                 ecmd.insert(BehaveFinished(true));
             }
             BehaveNodeStatus::Failure => {
-                // info!("tick_trees -> {:?}", res);
+                info!("tick_trees -> {:?}", res);
                 ecmd.insert(BehaveFinished(false));
             }
             BehaveNodeStatus::Running => {}
@@ -160,7 +234,7 @@ fn tick_trees(
     }
 }
 
-#[derive(Component, Debug)]
+#[derive(Component)]
 #[require(BehaveTargetEntity)]
 pub struct BehaveTree {
     tree: Tree<BehaveNode>,
@@ -181,7 +255,7 @@ fn walk_tree(
         write!(f, " ")?;
     }
     write!(f, "* ")?;
-    writeln!(f, "{}", node.value())?;
+    writeln!(f, "{}  [{:?}]", node.value(), node.id())?;
     for child in node.children() {
         walk_tree(child, depth + 1, f)?;
     }
@@ -238,6 +312,23 @@ impl BehaveTree {
             }
             _ => {
                 warn!("Given node result for a non-spawntask node?");
+            }
+        }
+    }
+
+    fn set_node_task_success(&mut self, node_id: NodeId, success: bool) {
+        let mut node = self.tree.get_mut(node_id).unwrap();
+        let val = node.value();
+        match val {
+            BehaveNode::Conditional { task_status, .. } => {
+                info!(
+                    "Setting conditional task for {node_id:?} success to {:?}",
+                    success
+                );
+                *task_status = TriggerTaskStatus::Complete(success);
+            }
+            _ => {
+                warn!("Given node result for a non-conditional node?");
             }
         }
     }
