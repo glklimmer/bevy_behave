@@ -1,22 +1,29 @@
-use std::any::TypeId;
-
-use bevy::{prelude::*, reflect::Reflectable};
+use bevy::prelude::*;
 use ego_tree::*;
 
+mod ctx;
 pub mod dyn_bundle;
 mod plugin;
+mod trigger;
 
+use ctx::*;
 use dyn_bundle::prelude::*;
-pub use ego_tree;
-use plugin::*;
+use trigger::*;
 
+// in case users want to construct the tree without using the macro, we reexport:
+pub use ego_tree;
+
+/// Includes the ego_tree `tree!` macro for easy tree construction.
+/// this crate also re-exports `ego_tree` so you can construct trees manually (but not in prelude).
 pub mod prelude {
-    pub use super::plugin::{BehaveCtx, BehavePlugin, BehaveSet, BehaveTargetEntity, BehaveTree};
+    pub use super::ctx::*;
+    pub use super::plugin::*;
+    pub use super::trigger::*;
     pub use super::{Behave, BehaveFinished};
-    // the ego_tree `tree!` macro
     pub use ego_tree::tree;
 }
 
+/// A node on the behave tree can be in one of these states
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum BehaveNodeStatus {
     Success,
@@ -24,11 +31,6 @@ enum BehaveNodeStatus {
     Running,
     AwaitingTrigger,
 }
-
-/// If present, don't tick tree.
-/// means tree is sleeping, until a trigger reports a status (which removes the component)
-#[derive(Component)]
-struct BehaveAwaitingTrigger;
 
 /// Inserted on the entity with the BehaveTree when the tree has finished executing.
 /// Containts the final result of the tree.
@@ -40,31 +42,6 @@ pub struct BehaveFinished(pub bool);
 ///
 /// Constuction is via static fns on Behave, so we can do the dynamic bundle stuff.
 /// although this probably makes it hard to load the tree def from an asset file?
-///
-/// TODO: could have an existing entity task too, that we insert a Running component on to start it.
-// #[derive(Debug)]
-pub trait BehaveConditionTrigger: Send + Sync {
-    fn trigger(&self, commands: &mut Commands, ctx: BehaveTriggerCtx);
-    fn clone_box(&self) -> Box<dyn BehaveConditionTrigger>;
-}
-
-impl<T: Clone + Send + Sync + 'static> BehaveConditionTrigger for T {
-    fn trigger(&self, commands: &mut Commands, ctx: BehaveTriggerCtx) {
-        commands.trigger(BehaveCondition::<T> {
-            value: self.clone(),
-            ctx,
-        });
-    }
-
-    fn clone_box(&self) -> Box<dyn BehaveConditionTrigger> {
-        Box::new(self.clone())
-    }
-}
-
-pub trait CloneableBehaveConditionTrigger: BehaveConditionTrigger + Clone {}
-
-impl<T: BehaveConditionTrigger + Clone> CloneableBehaveConditionTrigger for T {}
-
 #[derive(Clone)]
 pub enum Behave {
     /// Waits this many seconds before Succeeding
@@ -82,8 +59,9 @@ pub enum Behave {
     AlwaysSucceed,
     /// Always fails
     AlwaysFail,
-    /// Returns a result from a trigger
-    Conditional(Box<dyn BehaveConditionTrigger>),
+    /// Returns a result from a trigger. Can be used as a conditional (returning success or failure)
+    /// or simply to execute some bevy systems code without spawning an entity.
+    TriggerReq(Box<dyn BehaveUserTrigger>),
     /// Loops forever
     Forever,
 }
@@ -93,39 +71,9 @@ impl Behave {
         Behave::DynamicEntity(DynamicBundel::new(bundle))
     }
     pub fn conditional<T: Clone + Send + Sync + 'static>(value: T) -> Self {
-        Behave::Conditional(Box::new(value))
+        Behave::TriggerReq(Box::new(value))
     }
 }
-
-/// A wrapper around a user-provided type, which we trigger to test a condition.
-#[derive(Event, Debug, Clone)]
-pub struct BehaveCondition<T: Clone + Send + Sync> {
-    pub(crate) value: T,
-    pub(crate) ctx: BehaveTriggerCtx,
-}
-
-impl<T: Clone + Send + Sync> BehaveCondition<T> {
-    pub fn ctx(&self) -> &BehaveTriggerCtx {
-        &self.ctx
-    }
-    pub fn value(&self) -> &T {
-        &self.value
-    }
-}
-
-// pub struct BehaveConditional<const ID: &'static str>(Box<dyn Reflect>);
-
-// pub trait BehaveCondition {
-//     fn id() -> &'static str;
-// }
-
-// #[derive(Reflect)]
-// pub struct DistCond(f32);
-// impl BehaveCondition for DistCond {
-//     fn id() -> &'static str {
-//         "DistCond"
-//     }
-// }
 
 /// A state wraps the behaviour, and is the node in our internal tree representation of the behaviour tree
 /// One per Behave, with extra state bits.
@@ -160,10 +108,10 @@ pub(crate) enum BehaveNode {
     AlwaysFail {
         status: Option<BehaveNodeStatus>,
     },
-    Conditional {
+    TriggerReq {
         status: Option<BehaveNodeStatus>,
         task_status: TriggerTaskStatus,
-        trigger: Box<dyn BehaveConditionTrigger>,
+        trigger: Box<dyn BehaveUserTrigger>,
     },
 }
 
@@ -185,7 +133,7 @@ impl BehaveNode {
     fn existing_status(&self) -> &Option<BehaveNodeStatus> {
         match self {
             BehaveNode::Forever { status } => status,
-            BehaveNode::Conditional { status, .. } => status,
+            BehaveNode::TriggerReq { status, .. } => status,
             BehaveNode::Wait { status, .. } => status,
             BehaveNode::DynamicEntity { status, .. } => status,
             BehaveNode::SequenceFlow { status } => status,
@@ -202,7 +150,7 @@ impl std::fmt::Display for BehaveNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BehaveNode::Forever { .. } => write!(f, "Forever")?,
-            BehaveNode::Conditional { .. } => write!(f, "Conditional")?,
+            BehaveNode::TriggerReq { .. } => write!(f, "Conditional")?,
             BehaveNode::Wait { secs_to_wait, .. } => write!(f, "Wait({secs_to_wait})")?,
             BehaveNode::DynamicEntity { task_status, .. } => write!(f, "SpawnTask({task_status:?})")?,
             BehaveNode::SequenceFlow { .. } => write!(f, "SequenceFlow")?,
@@ -227,7 +175,7 @@ impl BehaveNode {
             BehaveNode::Forever { status } => {
                 *status = None;
             }
-            BehaveNode::Conditional {
+            BehaveNode::TriggerReq {
                 status,
                 task_status,
                 ..
@@ -269,7 +217,7 @@ impl BehaveNode {
     pub(crate) fn new(behave: Behave) -> Self {
         match behave {
             Behave::Forever => Self::Forever { status: None },
-            Behave::Conditional(trig_fn) => Self::Conditional {
+            Behave::TriggerReq(trig_fn) => Self::TriggerReq {
                 status: None,
                 task_status: TriggerTaskStatus::NotTriggered,
                 trigger: trig_fn,
@@ -293,6 +241,7 @@ impl BehaveNode {
     }
 }
 
+// sucks there aren't good traversal fns on NodeMut like there are on NodeRef..
 fn reset_descendants(n: &mut NodeMut<BehaveNode>) {
     // info!("Restting node: {:?}", n.id());
     n.value().reset();
@@ -341,18 +290,14 @@ fn tick_node(
                 other => other,
             }
         }
-        Conditional {
+        TriggerReq {
             task_status: task_status @ TriggerTaskStatus::NotTriggered,
             status,
             trigger,
         } => {
             trigger.trigger(
                 &mut ecmd.commands(),
-                BehaveTriggerCtx {
-                    bt_entity,
-                    task_node,
-                    target_entity,
-                },
+                BehaveCtx::new_for_trigger(bt_entity, task_node, target_entity),
             );
             // Don't use AwaitingTrigger for this, because of ordering issues..
             // the trigger response arrives BEFORE we insert the BehaveAwaitingTrigger component,
@@ -362,16 +307,16 @@ fn tick_node(
             BehaveNodeStatus::Running
         }
         #[rustfmt::skip]
-        Conditional {task_status: TriggerTaskStatus::Complete(true), status, ..} => {
+        TriggerReq {task_status: TriggerTaskStatus::Complete(true), status, ..} => {
             *status = Some(BehaveNodeStatus::Success);
             BehaveNodeStatus::Success
         }
         #[rustfmt::skip]
-        Conditional {task_status: TriggerTaskStatus::Complete(false), status, ..} => {
+        TriggerReq {task_status: TriggerTaskStatus::Complete(false), status, ..} => {
             *status = Some(BehaveNodeStatus::Failure);
             BehaveNodeStatus::Failure
         }
-        Conditional {
+        TriggerReq {
             task_status: TriggerTaskStatus::Triggered,
             ..
         } => unreachable!("Should have short circuited while awiaint trigger"),
@@ -432,11 +377,7 @@ fn tick_node(
             bundle,
         } => {
             let id = ecmd.commands().spawn(()).id();
-            let ctx = BehaveCtx {
-                bt_entity,
-                task_entity: id,
-                target_entity,
-            };
+            let ctx = BehaveCtx::new_for_entity(bt_entity, task_node, target_entity);
             ecmd.commands()
                 .entity(id)
                 .insert(ctx)
@@ -526,11 +467,5 @@ fn tick_node(
             *status = Some(final_status);
             final_status
         }
-    }
-}
-
-impl Clone for Box<dyn BehaveConditionTrigger> {
-    fn clone(&self) -> Self {
-        self.clone_box()
     }
 }

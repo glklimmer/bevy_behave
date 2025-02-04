@@ -10,35 +10,44 @@ Conditionals are implemented with observers, see below.
 
 
 ```rust
-let npc_entity = some_character_to_control();
+let npc_entity = get_enemy_entity();
+let player_entity = get_player_entity();
 
-// the tree definition
-let t = tree! {
-    Behave::Fallback => {
-        Behave::dynamic_spawn((
-            SlowAction::failing("Single Slowcoach", 2.0),
-            Name::new("Single Slowcoach failing")
-        )),
-        Behave::AlwaysFail,
-        Behave::Invert => {
+// the tree definition (which is cloneable).
+// and in theory, able to be loaded from an asset file (unimplemented).
+// when added to the BehaveTree component, this gets transformed internally to hold state etc.
+let tree = tree! {
+    Behave::Forever => {
+        // Run children in sequence until one fails
+        Behave::Sequence => {
+            // Spawn with any normal components that will control the target entity:
             Behave::dynamic_spawn((
-                SlowAction::succeeding("Single Slowcoach inside invert", 1.0),
-                Name::new("Single Slowcoach inside invert")
+                Name::new("Wait until player is near"),
+                WaitUntilPlayerIsNear{player_entity}
             )),
-        },
-        Behave::dynamic_spawn((
-            SlowAction::succeeding("Single Slowcoach", 1.0),
-            Name::new("Single Slowcoach")
-        )),
-        Behave::AlwaysSucceed,
+            Behave::Sequence => {
+                Behave::dynamic_spawn((
+                    Name::new("Move towards player while in range"),
+                    MoveTowardsPlayer{player_entity, speed: 100.0}
+                )),
+                // MoveTowardsPlayer suceeds if we catch them, in which case have a nap:
+                Behave::Wait(5.0),
+            }
+        }
     }
 };
-// the component
-let bt = BehaveTree::new(t);
-// spawn entity with behavetree. Make it a child of the npc entity for convenience.
-// default behaviour assumes the Parent of the tree entity is Target Entity you're controlling.
-let bt_ent = commands.spawn((Name::new("Behave tree for NPC"), bt)).set_parent(npc_entity);
+
+// Spawn an entity to run the behaviour tree.
+// Make it a child of the npc entity for convenience.
+// The default is to assume the Parent of the tree entity is the Target Entity you're controlling.
+let bt_ent = commands.spawn((
+        Name::new("Behave tree for NPC"),
+        BehaveTree::new(tree)
+    )).set_parent(npc_entity);
 ```
+
+Have a look at the [chase example](https://github.com/RJ/bevy_behave/blob/main/examples/chase.rs).
+
 
 ### Control Flow Nodes
 
@@ -51,7 +60,7 @@ Currently supported control flow nodes:
 | Invert        | Inverts success/failure of child. Must only have one child                                  |
 | AlwaysSucceed | Always succeeds                                                                             |
 | AlwaysFail    | Always fails                                                                                |
-| Conditional   | Triggers an event, which the user observes and responds to with a success or failure report |
+| TriggerReq    | Triggers an event, which the user observes and responds to with a success or failure report |
 
 ### Task Nodes
 

@@ -36,7 +36,7 @@ where
 }
 
 impl EntityCommand for Box<dyn DynEntityCommand> {
-    fn apply(self: Self, id: Entity, world: &mut World) {
+    fn apply(self, id: Entity, world: &mut World) {
         self.apply(id, world);
     }
 }

@@ -3,7 +3,7 @@ use bevy::{
     reflect::serde::{ReflectDeserializer, ReflectSerializer},
     scene::ron,
 };
-use bevy_behave::{prelude::*, BehaveCondition};
+use bevy_behave::prelude::*;
 
 fn main() {
     let mut app = App::new();
@@ -30,7 +30,7 @@ pub struct MyTest {
     foo: f32,
 }
 
-fn on_my_cond(trigger: Trigger<BehaveCondition<MyTest>>, mut commands: Commands) {
+fn on_my_cond(trigger: Trigger<BehaveTrigger<MyTest>>, mut commands: Commands) {
     let ev = trigger.event();
     info!("TRIG {ev:?}");
     let ctx = trigger.event().ctx();

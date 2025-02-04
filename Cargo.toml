@@ -7,3 +7,6 @@ edition = "2021"
 bevy = "0.15.1"
 dyn-clone = "1.0.18"
 ego-tree = "0.10.0"
+
+[lints.clippy]
+type_complexity = "allow"

@@ -16,7 +16,7 @@ fn main() {
 struct Player;
 
 #[derive(Component)]
-#[require(Transform)]
+#[require(Transform, VisionRadius(||VisionRadius(ENEMY_VISION_RADIUS)))]
 struct Enemy;
 
 #[derive(Component)]
@@ -32,17 +32,14 @@ fn init(mut commands: Commands) {
     let player = commands.spawn((Player,)).id();
 
     let enemy1 = commands
-        .spawn((
-            Transform::from_xyz(500., 0., 0.),
-            Enemy,
-            VisionRadius(ENEMY_VISION_RADIUS),
-        ))
+        .spawn((Enemy, Transform::from_xyz(500., 0., 0.)))
         .id();
 
+    // smaller vision radius on the second enemy
     let enemy2 = commands
         .spawn((
-            Transform::from_xyz(-500., 0., 0.),
             Enemy,
+            Transform::from_xyz(-500., 0., 0.),
             VisionRadius(ENEMY_VISION_RADIUS / 2.0),
         ))
         .id();
