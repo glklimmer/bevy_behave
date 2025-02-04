@@ -99,7 +99,7 @@ fn on_behave_status_report(
         error!("Failed to get bt entity {:?}", trigger);
         return;
     };
-    info!("📋 Got status report: {:?}", trigger.event());
+    // info!("📋 Got status report: {:?}", trigger.event());
     // remove the waiting trigger component, so the tree will be ticked next time.
     commands
         .entity(ctx.bt_entity)

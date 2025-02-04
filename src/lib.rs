@@ -295,10 +295,8 @@ fn tick_node(
             status,
             trigger,
         } => {
-            info!("TriggerReq - calling trigger()");
             let ctx = BehaveCtx::new_for_trigger(bt_entity, task_node, target_entity);
             ecmd.commands().dyn_trigger(trigger.clone(), ctx);
-            info!("TriggerReq - trigger() called");
             // Don't use AwaitingTrigger for this, because of ordering issues..
             // the trigger response arrives BEFORE we insert the BehaveAwaitingTrigger component,
             // so the trigger response handler can't remove it, so it never ticks.
@@ -308,26 +306,20 @@ fn tick_node(
         }
         #[rustfmt::skip]
         TriggerReq {task_status: TriggerTaskStatus::Complete(true), status, ..} => {
-            info!("TriggerReq - complete(true)");
             *status = Some(BehaveNodeStatus::Success);
             BehaveNodeStatus::Success
         }
         #[rustfmt::skip]
         TriggerReq {task_status: TriggerTaskStatus::Complete(false), status, ..} => {
-            info!("TriggerReq - complete(false)");
             *status = Some(BehaveNodeStatus::Failure);
             BehaveNodeStatus::Failure
         }
-        TriggerReq {
-            task_status: TriggerTaskStatus::Triggered,
-            status,
-            ..
-        } => {
-            warn!(
+        #[rustfmt::skip]
+        TriggerReq {task_status: TriggerTaskStatus::Triggered, status, .. } => {
+            unreachable!(
                 "Should have short circuited while awaiting trigger? returning: {:?}",
                 status.unwrap()
-            );
-            status.unwrap()
+            )
         }
         Invert { .. } => {
             let mut only_child = n.first_child().expect("Invert nodes must have a child");
@@ -360,7 +352,7 @@ fn tick_node(
             status,
             ..
         } => {
-            info!("Starting wait");
+            // info!("Starting wait");
             *start_time = Some(time.elapsed_secs());
             *status = Some(BehaveNodeStatus::Running);
             BehaveNodeStatus::Running
@@ -391,7 +383,7 @@ fn tick_node(
                 .entity(id)
                 .insert(ctx)
                 .dyn_insert(bundle.clone());
-            info!("Spawn task, Spawning entity: {id:?}");
+            // info!("Spawn task, Spawning entity: {id:?}");
             ecmd.add_child(id);
             *task_status = EntityTaskStatus::Started(id);
             *status = Some(BehaveNodeStatus::AwaitingTrigger);

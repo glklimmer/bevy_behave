@@ -91,9 +91,9 @@ fn tick_trees(
             BehaveTargetEntity::Entity(e) => *e,
         };
         let mut ecmd = commands.entity(entity);
-        info!("ABOUT TO TICK bt: {}", *bt);
+        // info!("ABOUT TO TICK bt: {}", *bt);
         let res = bt.tick(&time, &mut ecmd, target_entity);
-        info!("\n{}", *bt);
+        // info!("\n{}", *bt);
         match res {
             BehaveNodeStatus::AwaitingTrigger => {
                 // info!("tick_trees -> {:?}", res);
@@ -174,18 +174,18 @@ impl BehaveTree {
                         None
                     }
                 };
-                info!(
-                    "Setting conditional task for {node_id:?} success to {:?}",
-                    success
-                );
+                // info!(
+                //     "Setting conditional task for {node_id:?} success to {:?}",
+                //     success
+                // );
                 *task_status = EntityTaskStatus::Complete(success);
                 task_entity
             }
             BehaveNode::TriggerReq { task_status, .. } => {
-                info!(
-                    "Setting conditional task for {node_id:?} success to {:?}",
-                    success
-                );
+                // info!(
+                //     "Setting conditional task for {node_id:?} success to {:?}",
+                //     success
+                // );
                 *task_status = TriggerTaskStatus::Complete(success);
                 None
             }
