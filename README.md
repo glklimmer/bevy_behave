@@ -90,7 +90,7 @@ Currently supported control flow nodes:
 ## How conditionals/non-spawning tasks work
 
 I'm using observer events to implement no-entity-required tasks. You specify an arbitrary struct which is 
-delivered in a generic trigger which also carries a `BehaveTriggerCtx` value.
+delivered in a generic trigger which also carries a `BehaveCtx` value.
 The observer can then respond with success or failure.
 
 
@@ -105,7 +105,7 @@ struct HeightCheck {
 app.add_observer(on_height_check);
 
 // you respond by triggering a success or failure event created by the ctx:
-fn on_height_check(trigger: Trigger<BehaveCondition<HeightCheck>>, q: Query<&Position>, mut commands: Commands) {
+fn on_height_check(trigger: Trigger<BehaveTrigger<HeightCheck>>, q: Query<&Position>, mut commands: Commands) {
     let ctx: BehaveTriggerCtx = trigger.event().ctx();
     let height_check: HeightCheck = trigger.event().value();
     // lookup the position of the target entity (ie the entity this behaviour tree is controlling)
