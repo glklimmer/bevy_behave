@@ -128,7 +128,7 @@ a result is ready.
 * Avoided mut World systems – the tree ticking should be able to run in parallel with other things (i think).
 * So a fairly minimal wrapper around basic bevy systems.
 
-In release mode i can happily toss 10k enemies in the chase demo and zoom around at max framerate.
+In release mode i can happily toss 100k enemies in the chase demo and zoom around at max framerate.
 It gets slow rendering a zillion gizmo circles before any bevy_behave stuff gets in the way.
 
 
