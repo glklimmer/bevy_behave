@@ -5,7 +5,7 @@ edition = "2021"
 description = "A behaviour tree plugin for bevy with dynamic spawning."
 repository = "https://github.com/RJ/bevy_behave"
 keywords = ["bevy", "behaviour tree", "ai", "game"]
-license = "MIT or Apache-2.0"
+license = "MIT OR Apache-2.0"
 authors = ["Richard Jones <rj@metabrew.com>"]
 
 [dependencies]
