@@ -46,6 +46,10 @@ let bt_ent = commands.spawn((
     )).set_parent(npc_entity);
 ```
 
+When a dynamic spawn happens, the entity is given the components you provided along with a
+`BehaveCtx` component, which will tell you the target entity the tree is controlling, and a
+mechanism to trigger a status report for success or failure.
+
 Have a look at the [chase example](https://github.com/RJ/bevy_behave/blob/main/examples/chase.rs).
 
 

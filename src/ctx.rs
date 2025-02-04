@@ -91,14 +91,15 @@ impl BehaveStatusReport {
 fn on_behave_status_report(
     trigger: Trigger<BehaveStatusReport>,
     mut commands: Commands,
-    mut q_bt: Query<&mut BehaveTree, (With<BehaveAwaitingTrigger>, Without<BehaveFinished>)>,
+    mut q_bt: Query<&mut BehaveTree, Without<BehaveFinished>>,
 ) {
     // info!("Got status report: {:?}", trigger);
     let ctx = trigger.event().ctx();
-    let Ok(mut bt) = q_bt.get_mut(ctx.bt_entity) else {
-        error!("Failed to get bt entity on {}", trigger.entity());
+    let Ok(mut bt) = q_bt.get_mut(ctx.behave_entity()) else {
+        error!("Failed to get bt entity {:?}", trigger);
         return;
     };
+    info!("📋 Got status report: {:?}", trigger.event());
     // remove the waiting trigger component, so the tree will be ticked next time.
     commands
         .entity(ctx.bt_entity)

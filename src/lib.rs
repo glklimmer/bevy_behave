@@ -1,14 +1,14 @@
 use bevy::prelude::*;
 use ego_tree::*;
 
+mod behave_trigger;
 mod ctx;
 pub mod dyn_bundle;
 mod plugin;
-mod trigger;
 
+use behave_trigger::*;
 use ctx::*;
 use dyn_bundle::prelude::*;
-use trigger::*;
 
 // in case users want to construct the tree without using the macro, we reexport:
 pub use ego_tree;
@@ -16,9 +16,9 @@ pub use ego_tree;
 /// Includes the ego_tree `tree!` macro for easy tree construction.
 /// this crate also re-exports `ego_tree` so you can construct trees manually (but not in prelude).
 pub mod prelude {
+    pub use super::behave_trigger::BehaveTrigger;
     pub use super::ctx::*;
     pub use super::plugin::*;
-    pub use super::trigger::*;
     pub use super::{Behave, BehaveFinished};
     pub use ego_tree::tree;
 }
@@ -61,7 +61,7 @@ pub enum Behave {
     AlwaysFail,
     /// Returns a result from a trigger. Can be used as a conditional (returning success or failure)
     /// or simply to execute some bevy systems code without spawning an entity.
-    TriggerReq(Box<dyn BehaveUserTrigger>),
+    TriggerReq(DynamicTrigger),
     /// Loops forever
     Forever,
 }
@@ -70,8 +70,8 @@ impl Behave {
     pub fn dynamic_spawn<T: Bundle + Clone>(bundle: T) -> Behave {
         Behave::DynamicEntity(DynamicBundel::new(bundle))
     }
-    pub fn conditional<T: Clone + Send + Sync + 'static>(value: T) -> Self {
-        Behave::TriggerReq(Box::new(value))
+    pub fn trigger_req<T: Clone + Send + Sync + 'static>(value: T) -> Self {
+        Behave::TriggerReq(DynamicTrigger::new(value))
     }
 }
 
@@ -111,7 +111,7 @@ pub(crate) enum BehaveNode {
     TriggerReq {
         status: Option<BehaveNodeStatus>,
         task_status: TriggerTaskStatus,
-        trigger: Box<dyn BehaveUserTrigger>,
+        trigger: DynamicTrigger,
     },
 }
 
@@ -150,9 +150,9 @@ impl std::fmt::Display for BehaveNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             BehaveNode::Forever { .. } => write!(f, "Forever")?,
-            BehaveNode::TriggerReq { .. } => write!(f, "Conditional")?,
+            BehaveNode::TriggerReq { trigger, .. } => write!(f, "TriggerReq({})", trigger.type_name())?,
             BehaveNode::Wait { secs_to_wait, .. } => write!(f, "Wait({secs_to_wait})")?,
-            BehaveNode::DynamicEntity { task_status, .. } => write!(f, "SpawnTask({task_status:?})")?,
+            BehaveNode::DynamicEntity { .. } => write!(f, "SpawnTask")?,
             BehaveNode::SequenceFlow { .. } => write!(f, "SequenceFlow")?,
             BehaveNode::FallbackFlow { .. } => write!(f, "FallbackFlow")?,
             BehaveNode::Invert { .. } => write!(f, "Invert")?,
@@ -295,10 +295,10 @@ fn tick_node(
             status,
             trigger,
         } => {
-            trigger.trigger(
-                &mut ecmd.commands(),
-                BehaveCtx::new_for_trigger(bt_entity, task_node, target_entity),
-            );
+            info!("TriggerReq - calling trigger()");
+            let ctx = BehaveCtx::new_for_trigger(bt_entity, task_node, target_entity);
+            ecmd.commands().dyn_trigger(trigger.clone(), ctx);
+            info!("TriggerReq - trigger() called");
             // Don't use AwaitingTrigger for this, because of ordering issues..
             // the trigger response arrives BEFORE we insert the BehaveAwaitingTrigger component,
             // so the trigger response handler can't remove it, so it never ticks.
@@ -308,18 +308,27 @@ fn tick_node(
         }
         #[rustfmt::skip]
         TriggerReq {task_status: TriggerTaskStatus::Complete(true), status, ..} => {
+            info!("TriggerReq - complete(true)");
             *status = Some(BehaveNodeStatus::Success);
             BehaveNodeStatus::Success
         }
         #[rustfmt::skip]
         TriggerReq {task_status: TriggerTaskStatus::Complete(false), status, ..} => {
+            info!("TriggerReq - complete(false)");
             *status = Some(BehaveNodeStatus::Failure);
             BehaveNodeStatus::Failure
         }
         TriggerReq {
             task_status: TriggerTaskStatus::Triggered,
+            status,
             ..
-        } => unreachable!("Should have short circuited while awiaint trigger"),
+        } => {
+            warn!(
+                "Should have short circuited while awaiting trigger? returning: {:?}",
+                status.unwrap()
+            );
+            status.unwrap()
+        }
         Invert { .. } => {
             let mut only_child = n.first_child().expect("Invert nodes must have a child");
             if only_child.has_siblings() {

@@ -61,7 +61,7 @@ fn insert_bt(mut commands: Commands) {
                 )),
             },
             Behave::Invert => {
-                Behave::conditional(MyTest { foo: 3.1 }),
+                Behave::trigger_req(MyTest { foo: 3.1 }),
             },
             Behave::dynamic_spawn((
                 SlowAction::succeeding("Single Slowcoach", 1.0),

@@ -37,7 +37,14 @@ impl Default for BehavePlugin {
 impl Plugin for BehavePlugin {
     fn build(&self, app: &mut App) {
         app.configure_sets(self.schedule, BehaveSet);
-        app.add_systems(self.schedule, tick_trees.in_set(BehaveSet));
+        app.add_systems(
+            self.schedule,
+            tick_trees
+                // .run_if(bevy::time::common_conditions::on_timer(
+                //     std::time::Duration::from_secs(1),
+                // ))
+                .in_set(BehaveSet),
+        );
         // adds a global observer to listen for status report events
         app.add_plugins(crate::ctx::plugin);
     }
@@ -84,8 +91,9 @@ fn tick_trees(
             BehaveTargetEntity::Entity(e) => *e,
         };
         let mut ecmd = commands.entity(entity);
+        info!("ABOUT TO TICK bt: {}", *bt);
         let res = bt.tick(&time, &mut ecmd, target_entity);
-        // info!("\n{}", *bt);
+        info!("\n{}", *bt);
         match res {
             BehaveNodeStatus::AwaitingTrigger => {
                 // info!("tick_trees -> {:?}", res);

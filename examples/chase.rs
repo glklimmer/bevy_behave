@@ -8,15 +8,46 @@ fn main() {
     app.add_systems(Startup, init);
     app.add_systems(FixedUpdate, (wait_system, move_system));
     app.add_systems(Update, (move_player, render));
+    app.add_observer(on_randomize_colour);
     app.run();
+}
+
+const COLOURS: [Srgba; 5] = [
+    css::CADET_BLUE,
+    css::MAGENTA,
+    css::GREEN,
+    css::YELLOW,
+    css::ORANGE,
+];
+
+#[derive(Component)]
+struct Appearance {
+    colour: Color,
+    idx: usize,
+}
+
+impl Appearance {
+    fn new() -> Self {
+        Self {
+            colour: COLOURS[0].into(),
+            idx: 0,
+        }
+    }
+    fn next(&mut self) {
+        self.idx = (self.idx + 1) % COLOURS.len();
+        self.colour = COLOURS[self.idx].into();
+    }
 }
 
 #[derive(Component)]
 #[require(Transform)]
+#[require(Appearance(||Appearance{colour: css::GREEN.into(), idx: 0}))]
 struct Player;
 
 #[derive(Component)]
-#[require(Transform, VisionRadius(||VisionRadius(ENEMY_VISION_RADIUS)))]
+#[require(Transform)]
+#[require(VisionRadius(||VisionRadius(ENEMY_VISION_RADIUS)))]
+#[require(Appearance(Appearance::new))]
 struct Enemy;
 
 #[derive(Component)]
@@ -44,6 +75,13 @@ fn init(mut commands: Commands) {
         ))
         .id();
 
+    // let t = Behave::trigger_req(RandomizeColour);
+    // let tree = tree! {
+    //     t
+    // };
+    // let bt = BehaveTree::new(tree);
+    // info!("bt created");
+
     let tree = tree! {
         Behave::Forever => {
             Behave::Sequence => {
@@ -56,7 +94,11 @@ fn init(mut commands: Commands) {
                         Name::new("Move towards player while in range"),
                         MoveTowardsPlayer{player, speed: ENEMY_SPEED}
                     )),
-                    // MoveTowardsPlayer suceeds if we catch them, in which case have a nap:
+                    // MoveTowardsPlayer suceeds if we catch them, in which randomize our colour.
+                    // This uses a trigger to take an action without spawning an entity.
+                    Behave::trigger_req(RandomizeColour),
+                    // then have a nap (pause execution of the tree)
+                    // NB: this only runs if the trigger_req was successful, since it's in a Sequence.
                     Behave::Wait(5.0),
                 }
             }
@@ -64,13 +106,11 @@ fn init(mut commands: Commands) {
     };
 
     // default is to assume the Parent entity is the target the tree is controlling
-    commands
-        .spawn(BehaveTree::new(tree.clone()))
-        .set_parent(enemy1);
+    commands.spawn(BehaveTree::new(tree)).set_parent(enemy1);
 
-    commands
-        .spawn(BehaveTree::new(tree.clone()))
-        .set_parent(enemy2);
+    // commands
+    //     .spawn(BehaveTree::new(tree.clone()))
+    //     .set_parent(enemy2);
 }
 
 #[derive(Component, Clone)]
@@ -82,6 +122,27 @@ struct WaitUntilPlayerIsNear {
 struct MoveTowardsPlayer {
     player: Entity,
     speed: f32,
+}
+
+// We use RandomizeColour as a trigger in our tree.
+// It's not an event or a component, it gets wrapped in a BehaveTrigger struct, which is an Event.
+#[derive(Clone)]
+struct RandomizeColour;
+
+fn on_randomize_colour(
+    trigger: Trigger<BehaveTrigger<RandomizeColour>>,
+    mut q: Query<&mut Appearance, With<Enemy>>,
+    mut commands: Commands,
+) {
+    let ev = trigger.event();
+    // there wasn't any useful info in our trigger struct, but it's here:
+    let _randomise_color: &RandomizeColour = ev.inner();
+    let ctx: &BehaveCtx = ev.ctx();
+    info!("Randomizing color: {ctx:?}");
+    let mut appearance = q.get_mut(ctx.target_entity()).unwrap();
+    appearance.next();
+    // report success
+    commands.trigger(ctx.success());
 }
 
 // Wait until the player is within vision range of an enemy
@@ -152,9 +213,13 @@ fn move_player(
 // render with gizmos
 fn render(
     mut gizmos: Gizmos,
-    q: Query<((&Transform, Option<&VisionRadius>), Has<Enemy>, Has<Player>)>,
+    q: Query<(
+        (&Transform, &Appearance, Option<&VisionRadius>),
+        Has<Enemy>,
+        Has<Player>,
+    )>,
 ) {
-    for ((trans, vision_radius), is_enemy, is_player) in &q {
+    for ((trans, appearance, vision_radius), is_enemy, is_player) in &q {
         if let Some(vision_radius) = vision_radius {
             gizmos
                 .circle(
@@ -165,10 +230,10 @@ fn render(
                 .resolution(128);
         }
         if is_enemy {
-            gizmos.circle(trans.translation, 10., css::RED);
+            gizmos.circle(trans.translation, 10., appearance.colour);
         }
         if is_player {
-            gizmos.circle(trans.translation, 10., css::GREEN);
+            gizmos.circle(trans.translation, 10., appearance.colour);
         }
     }
 }
