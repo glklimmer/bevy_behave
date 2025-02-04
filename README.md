@@ -8,6 +8,9 @@ trigger a status report, at which point the entity will be despawned.
 
 Conditionals are implemented with observers, see below.
 
+This was an experiment to see if I could make an ergonomic bevyish way to do behaviour trees,
+I think it's turning out fairly well. Please do offer feedback (good or bad) if you check it out!
+
 
 ```rust
 let npc_entity = get_enemy_entity();
@@ -30,7 +33,11 @@ let tree = tree! {
                     Name::new("Move towards player while in range"),
                     MoveTowardsPlayer{player_entity, speed: 100.0}
                 )),
-                // MoveTowardsPlayer suceeds if we catch them, in which case have a nap:
+                // MoveTowardsPlayer suceeds if we catch them, in which randomize our colour.
+                // This uses a trigger to take an action without spawning an entity.
+                Behave::trigger_req(RandomizeColour),
+                // then have a nap (pause execution of the tree)
+                // NB: this only runs if the trigger_req was successful, since it's in a Sequence.
                 Behave::Wait(5.0),
             }
         }
@@ -40,10 +47,10 @@ let tree = tree! {
 // Spawn an entity to run the behaviour tree.
 // Make it a child of the npc entity for convenience.
 // The default is to assume the Parent of the tree entity is the Target Entity you're controlling.
-let bt_ent = commands.spawn((
-        Name::new("Behave tree for NPC"),
-        BehaveTree::new(tree)
-    )).set_parent(npc_entity);
+commands.spawn((
+    Name::new("Behave tree for NPC"),
+    BehaveTree::new(tree)
+)).set_parent(npc_entity);
 ```
 
 When a dynamic spawn happens, the entity is given the components you provided along with a
@@ -70,20 +77,22 @@ Currently supported control flow nodes:
 
 | Node         | Description                                                                                                                                                                    |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Wait         | Waits this many seconds before Succeeding<br>Timer is ticked inside the tre, no entities are spawned.                                                                          |
+| Wait         | Waits this many seconds before Succeeding<br>Timer is ticked inside the tree, no entities are spawned.                                                                         |
 | DynamicSpawn | Spawns an entity when this node in the tree is reached, and waits for it to trigger a status report.<br>Once the entity triggers a status report, it is immediately despawned. |
 
 ### Unimplemented but possibly useful Task Nodes:
 
-| Node   | Description                                                                                                                                                                                              |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Entity | When this node on the tree is reached, a `BehaveCtx` is inserted.<br>The tree then waits for this entity to trigger a status report.<br>On completion, `BehaveCtx` is removed, but nothing is despawned. |
+| Node           | Description                                                                                                                                                                                              |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ExistingEntity | When this node on the tree is reached, a `BehaveCtx` is inserted.<br>The tree then waits for this entity to trigger a status report.<br>On completion, `BehaveCtx` is removed, but nothing is despawned. |
 
 
-## How conditionals work
+## How conditionals/non-spawning tasks work
 
-I'm using observer events to implement conditionals. You specify an arbitrary struct which is 
+I'm using observer events to implement no-entity-required tasks. You specify an arbitrary struct which is 
 delivered in a generic trigger which also carries a `BehaveTriggerCtx` value.
+The observer can then respond with success or failure.
+
 
 ```rust
 // Conditionals are types that are delivered by a trigger:
@@ -108,22 +117,33 @@ fn on_height_check(trigger: Trigger<BehaveCondition<HeightCheck>>, q: Query<&Pos
     }
 }
 
-// a behaviour tree that spawns an entity with `FlyAction` if the character is high enough:
-let tree = tree! {
-    Behave::conditional(HeightCheck{min_height: 100.0}) => {
-        Behave::dynamic_spawn((Name:new("Take Off"), FlyAction::new(..))),
-    }
-}
-
 ```
+
+## Performance
+
+* There's just one global observer for receiving task status reports from entities or triggers.
+* Most of the time, the work is being done in a spawned entity using one of your action components,
+and in this state, there is a marker on the tree component so it doesn't tick or do anything until
+a result is ready.
+* Avoided mut World systems – the tree ticking should be able to run in parallel with other things (i think).
+* So a fairly minimal wrapper around basic bevy systems.
+
+In release mode i can happily toss 10k enemies in the chase demo and zoom around at max framerate.
+It gets slow rendering a zillion gizmo circles before any bevy_behave stuff gets in the way.
+
+## License
+
+Same as bevy: MIT or Apache-2.0.
+
+## Notes
 
 <details>
 
-<summary>Alternative approach taking `IntoSystem`</summary>
+<summary>Alternative approach taking `IntoSystem` (not taken)</summary>
 
 ### Alternative approach for conditionals
 
-Could do `If` and `While` control flow by taking an `IntoSystem` with a defined In and Out type,
+I considered doing control flow by taking an `IntoSystem` with a defined In and Out type,
 something like this:
 ```rust
 
@@ -157,5 +177,5 @@ However I don't think the resulting data struct would be cloneable, nor could yo
 it from an asset file for manipulation (or can you?)
 
 I would also need mutable World in the "tick trees" system, which would stop it running in parallel maybe.
-
+Anyway observers seem to work pretty well.
 </details>
