@@ -131,6 +131,12 @@ a result is ready.
 In release mode i can happily toss 10k enemies in the chase demo and zoom around at max framerate.
 It gets slow rendering a zillion gizmo circles before any bevy_behave stuff gets in the way.
 
+
+
+https://github.com/user-attachments/assets/e12bc4dd-d7fb-4eca-8810-90d65300776d
+
+
+
 ## License
 
 Same as bevy: MIT or Apache-2.0.
