@@ -20,7 +20,9 @@ pub mod prelude {
     pub use super::ctx::*;
     pub use super::plugin::*;
     pub use super::{Behave, BehaveFinished};
-    pub use ego_tree::tree;
+    // pub use ego_tree::tree;
+    pub use super::behave;
+    pub use ego_tree::*;
 }
 
 /// A node on the behave tree can be in one of these states
@@ -469,4 +471,63 @@ fn tick_node(
             final_status
         }
     }
+}
+
+/// Modifed version of ego_tree's tree! macro, to allow merging subtrees:
+///
+/// let subtree: Tree<Behave> = get_subtree();
+/// let t = tree! {
+///     Behave::Sequence => {
+///         Behave::Wait(2),
+///         @ subtree
+///     }
+/// };
+///
+#[macro_export]
+macro_rules! behave {
+    // Use an “@” marker to indicate that the expression is a subtree, to be merged into the tree.
+    (@ $n:ident { @ $subtree:expr $(, $($tail:tt)*)? }) => {{
+        $n.append_subtree($subtree);
+        $( behave!(@ $n { $($tail)* }); )?
+    }};
+
+    // Base case: no tokens left.
+    (@ $n:ident { }) => { };
+
+    // Leaf: last value.
+    (@ $n:ident { $value:expr }) => {{
+        $n.append($value);
+    }};
+
+    // Leaf: value with additional siblings.
+    (@ $n:ident { $value:expr, $($tail:tt)* }) => {{
+        $n.append($value);
+        behave!(@ $n { $($tail)* });
+    }};
+
+    // Node: last node with children.
+    (@ $n:ident { $value:expr => $children:tt }) => {{
+        let mut node = $n.append($value);
+        behave!(@ node $children);
+    }};
+
+    // Node: node with children and additional siblings.
+    (@ $n:ident { $value:expr => $children:tt, $($tail:tt)* }) => {{
+        let mut node = $n.append($value);
+        behave!(@ node $children);
+        behave!(@ $n { $($tail)* });
+    }};
+
+    // Top-level: tree with a root only.
+    ($root:expr) => { $crate::Tree::new($root) };
+
+    // Top-level: tree with a root and children.
+    ($root:expr => $children:tt) => {{
+        let mut tree = $crate::Tree::new($root);
+        {
+            let mut node = tree.root_mut();
+            behave!(@ node $children);
+        }
+        tree
+    }};
 }

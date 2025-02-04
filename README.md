@@ -123,7 +123,7 @@ fn on_height_check(trigger: Trigger<BehaveTrigger<HeightCheck>>, q: Query<&Posit
 
 * There's just one global observer for receiving task status reports from entities or triggers.
 * Most of the time, the work is being done in a spawned entity using one of your action components,
-and in this state, there is a marker on the tree component so it doesn't tick or do anything until
+and in this state, there is a marker on the tree entity so it doesn't tick or do anything until
 a result is ready.
 * Avoided mut World systems – the tree ticking should be able to run in parallel with other things (i think).
 * So a fairly minimal wrapper around basic bevy systems.
