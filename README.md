@@ -155,13 +155,23 @@ a result is ready.
 * Avoided mut World systems – the tree ticking should be able to run in parallel with other things (i think).
 * So a fairly minimal wrapper around basic bevy systems.
 
-In release mode i can happily toss 100k enemies in the chase demo and zoom around at max framerate.
+In release mode, i can happily toss 100k enemies in the chase demo and zoom around at max framerate.
 It gets slow rendering a zillion gizmo circles before any bevy_behave stuff gets in the way.
 
+**Chase example**
 
+This is the chase example from this repo, running in release mode on an M1 mac with 100k enemies.
+Each enemy has a behaviour tree child and an active task component entity. So 1 enemy is 3 entities.
 
 https://github.com/user-attachments/assets/e12bc4dd-d7fb-4eca-8810-90d65300776d
 
+**Video from my space game**
+
+Here I have more complex behaviour trees managing orbits, landing, etc. Lots of PID controllers at work.
+No attempts at optimising the logic yet, but I can add 5k ships running behaviours. Each is a dynamic avian physics object exerting forces via a thruster.
+
+
+https://github.com/user-attachments/assets/f8642a05-1657-4851-adb8-d0ed7fc4fe35
 
 
 ## License
