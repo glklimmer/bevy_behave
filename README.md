@@ -1,5 +1,7 @@
 # bevy_behave
 
+[![crates.io](https://img.shields.io/crates/v/bevy_behave)](https://crates.io/crates/bevy_behave)
+
 A behaviour tree plugin for bevy with dynamic spawning.
 
 When an action (leaf node / task node) in the behaviour tree runs, it will spawn an entity with
