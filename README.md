@@ -171,7 +171,11 @@ Here I have more complex behaviour trees managing orbits, landing, etc. Lots of 
 No attempts at optimising the logic yet, but I can add 5k ships running behaviours. Each is a dynamic avian physics object exerting forces via a thruster.
 
 
-https://github.com/user-attachments/assets/f8642a05-1657-4851-adb8-d0ed7fc4fe35
+
+
+https://github.com/user-attachments/assets/ef4f0539-0b4d-4d57-9516-a39783de140f
+
+
 
 
 ## License
