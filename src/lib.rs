@@ -16,12 +16,11 @@ pub use ego_tree;
 /// Includes the ego_tree `tree!` macro for easy tree construction.
 /// this crate also re-exports `ego_tree` so you can construct trees manually (but not in prelude).
 pub mod prelude {
+    pub use super::behave;
     pub use super::behave_trigger::BehaveTrigger;
     pub use super::ctx::*;
     pub use super::plugin::*;
     pub use super::{Behave, BehaveFinished};
-    // pub use ego_tree::tree;
-    pub use super::behave;
     pub use ego_tree::*;
 }
 
@@ -66,6 +65,22 @@ pub enum Behave {
     TriggerReq(DynamicTrigger),
     /// Loops forever
     Forever,
+}
+
+impl std::fmt::Display for Behave {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Behave::Wait(secs) => write!(f, "Wait({secs}s)"),
+            Behave::DynamicEntity(_) => write!(f, "DynamicEntity"),
+            Behave::Sequence => write!(f, "Sequence"),
+            Behave::Fallback => write!(f, "Fallback"),
+            Behave::Invert => write!(f, "Invert"),
+            Behave::AlwaysSucceed => write!(f, "AlwaysSucceed"),
+            Behave::AlwaysFail => write!(f, "AlwaysFail"),
+            Behave::TriggerReq(t) => write!(f, "TriggerReq({})", t.type_name()),
+            Behave::Forever => write!(f, "Forever"),
+        }
+    }
 }
 
 impl Behave {
@@ -258,10 +273,10 @@ fn reset_descendants(n: &mut NodeMut<BehaveNode>) {
 fn tick_node(
     n: &mut NodeMut<BehaveNode>,
     time: &Res<Time>,
-    ecmd: &mut EntityCommands<'_>,
+    commands: &mut Commands,
+    bt_entity: Entity,
     target_entity: Entity,
 ) -> BehaveNodeStatus {
-    let bt_entity = ecmd.id();
     use BehaveNode::*;
     debug!("tick_node: {:?} = {}", n.id(), n.value());
     // short circuit nodes that have already got a result, or are blocked waiting for a trigger
@@ -283,7 +298,7 @@ fn tick_node(
             if only_child.has_siblings() {
                 panic!("Forever nodes must have a single child, not multiple children");
             }
-            match tick_node(&mut only_child, time, ecmd, target_entity) {
+            match tick_node(&mut only_child, time, commands, bt_entity, target_entity) {
                 BehaveNodeStatus::Success | BehaveNodeStatus::Failure => {
                     // reset so we can run it again next tick
                     reset_descendants(&mut only_child);
@@ -298,7 +313,7 @@ fn tick_node(
             trigger,
         } => {
             let ctx = BehaveCtx::new_for_trigger(bt_entity, task_node, target_entity);
-            ecmd.commands().dyn_trigger(trigger.clone(), ctx);
+            commands.dyn_trigger(trigger.clone(), ctx);
             // Don't use AwaitingTrigger for this, because of ordering issues..
             // the trigger response arrives BEFORE we insert the BehaveAwaitingTrigger component,
             // so the trigger response handler can't remove it, so it never ticks.
@@ -328,7 +343,7 @@ fn tick_node(
             if only_child.has_siblings() {
                 panic!("Invert nodes must have a single child, not multiple children");
             }
-            let res = match tick_node(&mut only_child, time, ecmd, target_entity) {
+            let res = match tick_node(&mut only_child, time, commands, bt_entity, target_entity) {
                 BehaveNodeStatus::Success => BehaveNodeStatus::Failure, // swapped
                 BehaveNodeStatus::Failure => BehaveNodeStatus::Success, // swapped
                 BehaveNodeStatus::Running => BehaveNodeStatus::Running,
@@ -379,15 +394,30 @@ fn tick_node(
             status,
             bundle,
         } => {
-            let id = ecmd.commands().spawn(()).id();
+            // bit of extra archetype moving here for now, but i need the ctx to be on the entity
+            // before the user's components, so it can be found in an OnAdd trigger.
+            // might change dyn_insert to allow extra component at insertion time..
+            let mut e = commands.spawn(());
+            e.set_parent(bt_entity);
             let ctx = BehaveCtx::new_for_entity(bt_entity, task_node, target_entity);
-            ecmd.commands()
-                .entity(id)
-                .insert(ctx)
-                .dyn_insert(bundle.clone());
-            // info!("Spawn task, Spawning entity: {id:?}");
-            ecmd.add_child(id);
+            // NB: if the component in the dyn bundle has an OnAdd which reports success or failure
+            //     immediately, the entity will be despawned instantly, so you can't do something
+            //     like .set_parent on it after doing the insertion (we set_parent above).
+            //     Else you get a "The entity with ID X does not exist" panic in bevy_hierarchy code.
+            let id = e.insert(ctx).dyn_insert(bundle.clone()).id();
+            // info!("Spawned entity: {id:?} (parent: {bt_entity:?}) for node {task_node:?}",);
             *task_status = EntityTaskStatus::Started(id);
+            // We go to Running for one tick, so that any OnAdd trigger that immediately reports a
+            // status we take effect properly.
+            // Next match case will set to AwaitingTrigger if we don't get a status report
+            // Otherwise there is an ordering mismatch and the AwaitingTrigger isn't removed.
+            *status = Some(BehaveNodeStatus::Running);
+            BehaveNodeStatus::Running
+        }
+        #[rustfmt::skip]
+        DynamicEntity { task_status: EntityTaskStatus::Started(_), status: status @ Some(BehaveNodeStatus::Running), .. } => {
+            // if we tick without having received a status report, it means there can't have been any OnAdd trigger 
+            // that immediately sent a report and caused a despawn, so we can go dormant:
             *status = Some(BehaveNodeStatus::AwaitingTrigger);
             BehaveNodeStatus::AwaitingTrigger
         }
@@ -414,7 +444,7 @@ fn tick_node(
 
             let mut final_status;
             loop {
-                match tick_node(&mut child, time, ecmd, target_entity) {
+                match tick_node(&mut child, time, commands, bt_entity, target_entity) {
                     BehaveNodeStatus::Success => {
                         final_status = BehaveNodeStatus::Success;
                         if let Ok(next_child) = child.into_next_sibling() {
@@ -446,7 +476,7 @@ fn tick_node(
 
             let mut final_status;
             loop {
-                match tick_node(&mut child, time, ecmd, target_entity) {
+                match tick_node(&mut child, time, commands, bt_entity, target_entity) {
                     BehaveNodeStatus::Failure => {
                         // a child fails, try the next one, or if no more children, we failed.
                         final_status = BehaveNodeStatus::Failure;
@@ -519,11 +549,11 @@ macro_rules! behave {
     }};
 
     // Top-level: tree with a root only.
-    ($root:expr) => { $crate::Tree::new($root) };
+    ($root:expr) => { $crate::ego_tree::Tree::new($root) };
 
     // Top-level: tree with a root and children.
     ($root:expr => $children:tt) => {{
-        let mut tree = $crate::Tree::new($root);
+        let mut tree = $crate::ego_tree::Tree::new($root);
         {
             let mut node = tree.root_mut();
             behave!(@ node $children);

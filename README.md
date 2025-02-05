@@ -19,27 +19,38 @@ let player_entity = get_player_entity();
 // the tree definition (which is cloneable).
 // and in theory, able to be loaded from an asset file (unimplemented).
 // when added to the BehaveTree component, this gets transformed internally to hold state etc.
-let tree = tree! {
+//
+// These trees are `ego_tree::Tree<Behave>` if you want to construct them manually.
+// Conventient macro usage shown below.
+//
+// Breaking it into two trees and composing, just to show how it's done.
+let chase_subtree = behave! {
+    Behave::Sequence => {
+        Behave::dynamic_spawn((
+            Name::new("Move towards player while in range"),
+            MoveTowardsPlayer{player_entity, speed: 100.0}
+        )),
+        // MoveTowardsPlayer suceeds if we catch them, in which randomize our colour.
+        // This uses a trigger to take an action without spawning an entity.
+        Behave::trigger_req(RandomizeColour),
+        // then have a nap (pause execution of the tree)
+        // NB: this only runs if the trigger_req was successful, since it's in a Sequence.
+        Behave::Wait(5.0),
+    }
+};
+
+let tree = behave! {
     Behave::Forever => {
         // Run children in sequence until one fails
         Behave::Sequence => {
+            // WAIT FOR THE PLAYER TO GET CLOSE
             // Spawn with any normal components that will control the target entity:
             Behave::dynamic_spawn((
                 Name::new("Wait until player is near"),
                 WaitUntilPlayerIsNear{player_entity}
             )),
-            Behave::Sequence => {
-                Behave::dynamic_spawn((
-                    Name::new("Move towards player while in range"),
-                    MoveTowardsPlayer{player_entity, speed: 100.0}
-                )),
-                // MoveTowardsPlayer suceeds if we catch them, in which randomize our colour.
-                // This uses a trigger to take an action without spawning an entity.
-                Behave::trigger_req(RandomizeColour),
-                // then have a nap (pause execution of the tree)
-                // NB: this only runs if the trigger_req was successful, since it's in a Sequence.
-                Behave::Wait(5.0),
-            }
+            // CHASE THE PLAYER
+            @ chase_subtree
         }
     }
 };
@@ -85,6 +96,20 @@ Currently supported control flow nodes:
 | Node           | Description                                                                                                                                                                                              |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ExistingEntity | When this node on the tree is reached, a `BehaveCtx` is inserted.<br>The tree then waits for this entity to trigger a status report.<br>On completion, `BehaveCtx` is removed, but nothing is despawned. |
+
+### Useful components
+
+#### Triggering completion after a timeout
+
+To trigger a status report on a dynamic spawn task after a timeout, use the `BehaveTimeout` helper component:
+
+```rust
+let tree = behave! {
+    Behave::dynamic_spawn((LongRunningTaskComp::new(), BehaveTimeout::from_secs(5.0, true)))
+}
+```
+
+This will get the `BehaveCtx` from the entity, and trigger a success or failure report for you after the timeout.
 
 
 ## How conditionals/non-spawning tasks work
@@ -142,6 +167,22 @@ https://github.com/user-attachments/assets/e12bc4dd-d7fb-4eca-8810-90d65300776d
 Same as bevy: MIT or Apache-2.0.
 
 ## Notes
+
+The `behave!` macro is an extension of the `ego_tree::tree!` macro, i need to upstream the
+subtree merging feature.
+
+#### todo
+
+* validate tree shape. some nodes need a specific number of children.
+
+#### desired tests
+
+* dynamic spawn that gives result in an onadd trigger
+* dynamic spawn that gives result during running
+* conditional that gives result
+* tree shape stuff
+
+### Paths not taken
 
 <details>
 

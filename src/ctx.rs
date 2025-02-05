@@ -93,13 +93,18 @@ fn on_behave_status_report(
     mut commands: Commands,
     mut q_bt: Query<&mut BehaveTree, Without<BehaveFinished>>,
 ) {
-    // info!("Got status report: {:?}", trigger);
     let ctx = trigger.event().ctx();
     let Ok(mut bt) = q_bt.get_mut(ctx.behave_entity()) else {
-        error!("Failed to get bt entity {:?}", trigger);
+        // This is not necessarily an error - the entity could have been legitimately despawned
+        // as part of gameplay logic.
+        debug!("Failed to get bt entity during status report {:?}", trigger);
         return;
     };
-    // info!("📋 Got status report: {:?}", trigger.event());
+    // info!(
+    //     "📋 Got status report, removing BehaveAwaitingTrigger {:?} node status = {:?}",
+    //     trigger.event(),
+    //     bt.get_node_result(ctx.task_node())
+    // );
     // remove the waiting trigger component, so the tree will be ticked next time.
     commands
         .entity(ctx.bt_entity)

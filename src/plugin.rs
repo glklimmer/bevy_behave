@@ -39,12 +39,11 @@ impl Plugin for BehavePlugin {
         app.configure_sets(self.schedule, BehaveSet);
         app.add_systems(
             self.schedule,
-            tick_trees
-                // .run_if(bevy::time::common_conditions::on_timer(
-                //     std::time::Duration::from_secs(1),
-                // ))
+            (tick_timeout_components, tick_trees)
+                .chain()
                 .in_set(BehaveSet),
         );
+        app.add_observer(on_tick_timeout_added);
         // adds a global observer to listen for status report events
         app.add_plugins(crate::ctx::plugin);
     }
@@ -83,29 +82,23 @@ fn tick_trees(
     mut commands: Commands,
     time: Res<Time>,
 ) {
-    for (entity, mut bt, opt_parent, target_entity) in query.iter_mut() {
+    for (bt_entity, mut bt, opt_parent, target_entity) in query.iter_mut() {
+        // info!("Ticking tree {bt_entity:?} (with parent: {opt_parent:?})");
         let target_entity = match target_entity {
             BehaveTargetEntity::Parent => {
                 opt_parent.map(|p| p.get()).unwrap_or(Entity::PLACEHOLDER)
             }
             BehaveTargetEntity::Entity(e) => *e,
         };
-        let mut ecmd = commands.entity(entity);
-        // info!("ABOUT TO TICK bt: {}", *bt);
-        let res = bt.tick(&time, &mut ecmd, target_entity);
-        // info!("\n{}", *bt);
-        match res {
+        match bt.tick(&time, &mut commands, bt_entity, target_entity) {
             BehaveNodeStatus::AwaitingTrigger => {
-                // info!("tick_trees -> {:?}", res);
-                ecmd.insert(BehaveAwaitingTrigger);
+                commands.entity(bt_entity).insert(BehaveAwaitingTrigger);
             }
             BehaveNodeStatus::Success => {
-                // info!("tick_trees -> {:?}", res);
-                ecmd.insert(BehaveFinished(true));
+                commands.entity(bt_entity).insert(BehaveFinished(true));
             }
             BehaveNodeStatus::Failure => {
-                // info!("tick_trees -> {:?}", res);
-                ecmd.insert(BehaveFinished(false));
+                commands.entity(bt_entity).insert(BehaveFinished(false));
             }
             BehaveNodeStatus::Running => {}
         }
@@ -114,6 +107,7 @@ fn tick_trees(
 
 #[derive(Component)]
 #[require(BehaveTargetEntity)]
+#[require(Name(||Name::new("BehaveTree")))]
 pub struct BehaveTree {
     tree: Tree<BehaveNode>,
 }
@@ -150,11 +144,12 @@ impl BehaveTree {
     fn tick(
         &mut self,
         time: &Res<Time>,
-        ecmd: &mut EntityCommands<'_>,
+        commands: &mut Commands,
+        bt_entity: Entity,
         target_entity: Entity,
     ) -> BehaveNodeStatus {
         let mut node = self.tree.root_mut();
-        tick_node(&mut node, time, ecmd, target_entity)
+        tick_node(&mut node, time, commands, bt_entity, target_entity)
     }
 
     /// Returns Option<Entity> being an entity that was spawned to run this task node.
@@ -175,7 +170,7 @@ impl BehaveTree {
                     }
                 };
                 // info!(
-                //     "Setting conditional task for {node_id:?} success to {:?}",
+                //     "Setting Dynamic Entity task for {node_id:?} success to {:?}",
                 //     success
                 // );
                 *task_status = EntityTaskStatus::Complete(success);
@@ -192,6 +187,53 @@ impl BehaveTree {
             _ => {
                 error!("Given node result but no matching node found: {node_id:?}");
                 None
+            }
+        }
+    }
+}
+
+/// Will report success or failure after a timeout
+#[derive(Component, Debug, Clone)]
+pub struct BehaveTimeout {
+    pub duration: std::time::Duration,
+    pub should_succeed: bool,
+    start_time: f32,
+}
+
+impl BehaveTimeout {
+    pub fn new(duration: std::time::Duration, should_succeed: bool) -> Self {
+        Self {
+            duration,
+            should_succeed,
+            start_time: 0.0,
+        }
+    }
+    pub fn from_secs(secs: f32, should_succeed: bool) -> Self {
+        Self::new(std::time::Duration::from_secs(secs as u64), should_succeed)
+    }
+}
+
+fn on_tick_timeout_added(
+    t: Trigger<OnAdd, BehaveTimeout>,
+    mut q: Query<&mut BehaveTimeout>,
+    time: Res<Time>,
+) {
+    let mut timeout = q.get_mut(t.entity()).unwrap();
+    timeout.start_time = time.elapsed_secs();
+}
+
+fn tick_timeout_components(
+    q: Query<(&BehaveTimeout, &BehaveCtx)>,
+    time: Res<Time>,
+    mut commands: Commands,
+) {
+    for (timeout, ctx) in q.iter() {
+        let elapsed = time.elapsed_secs() - timeout.start_time;
+        if elapsed >= timeout.duration.as_secs_f32() {
+            if timeout.should_succeed {
+                commands.trigger(ctx.success());
+            } else {
+                commands.trigger(ctx.failure());
             }
         }
     }
