@@ -404,7 +404,7 @@ fn tick_node(
             //     immediately, the entity will be despawned instantly, so you can't do something
             //     like .set_parent on it after doing the insertion (we set_parent above).
             //     Else you get a "The entity with ID X does not exist" panic in bevy_hierarchy code.
-            let id = e.insert(ctx).dyn_insert(bundle.clone()).id();
+            let id = e.dyn_insert(bundle.clone(), Some(ctx)).id();
             // info!("Spawned entity: {id:?} (parent: {bt_entity:?}) for node {task_node:?}",);
             *task_status = EntityTaskStatus::Started(id);
             // We go to Running for one tick, so that any OnAdd trigger that immediately reports a

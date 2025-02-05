@@ -16,6 +16,16 @@ pub struct BehaveCtx {
     ctx_type: CtxType,
 }
 
+impl std::fmt::Display for BehaveCtx {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "BehaveCtx(bt: {}, target: {}, type: {:?})",
+            self.bt_entity, self.target_entity, self.ctx_type
+        )
+    }
+}
+
 // this is set on BehaveCtx just to catch any errors - we verify when we update the tree that the
 // node type matches what we expect. just for peace of mind while developing really.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

@@ -33,6 +33,15 @@ fn chase_plugin(app: &mut App) {
     app.add_observer(onremove_move_towards_player);
     app.add_observer(on_despawn_enemies);
     app.add_observer(on_spawn_enemies);
+    app.add_observer(on_new_behaviour);
+}
+
+// all dynamic spawn components are inserted at the same time as the BehaveCtx,
+// so if you add a Name component you can see it when a new behaviour is spawned:
+fn on_new_behaviour(trigger: Trigger<OnAdd, BehaveCtx>, q: Query<(&Name, &BehaveCtx)>) {
+    if let Ok((name, ctx)) = q.get(trigger.entity()) {
+        info!("New behaviour spawned {ctx} = {}", name.as_str());
+    }
 }
 
 #[derive(Component)]
