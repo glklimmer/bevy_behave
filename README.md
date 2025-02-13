@@ -1,8 +1,16 @@
-# bevy_behave
+<div align="left">
+<h1>bevy_behave</h1>
+<p>
+    <strong>A behaviour tree plugin for bevy with dynamic spawning.</strong>
+</p>
+<p>
+    <a href="https://crates.io/crates/bevy_behave"><img src="https://img.shields.io/crates/v/bevy_behave.svg?style=flat-square" alt="crates.io"/></a>
+    <a href="https://docs.rs/bevy_behave"><img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square" alt="docs.rs"/></a>
+</p>
+</div>
 
-[![crates.io](https://img.shields.io/crates/v/bevy_behave)](https://crates.io/crates/bevy_behave)
-
-A behaviour tree plugin for bevy with dynamic spawning.
+`bevy_behave` is a behaviour tree plugin for bevy with a sensible API and minimal overheads.
+No magic is required for the task components, they are are regular bevy components using triggers to report status.
 
 When an action (aka leaf node, task node) in the behaviour tree runs, it will spawn an entity with
 the components you specified in the tree definition. The tree then waits for this entity to
@@ -10,8 +18,7 @@ trigger a status report, at which point the entity will be despawned.
 
 You can also take actions without spawning an entity by triggering an Event, which can also be used as a conditional in a control node.
 
-`bevy_behave` strives for an ergonomic bevy API with minimal overheads. No magic is required for
-the action components, they are are regular bevy components using triggers to report status.
+
 
 This tree definition is from the [chase example](https://github.com/RJ/bevy_behave/blob/main/examples/chase.rs):
 
