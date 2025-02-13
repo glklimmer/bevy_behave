@@ -6,7 +6,7 @@ pub(crate) fn plugin(app: &mut App) {
     app.add_observer(on_behave_status_report);
 }
 
-/// Provided to the user's bevy system or observer code, so they have a way to report status
+/// Provided to the user's bevy system or observer fn, so they have a way to report status
 /// back to the tree, and to look up the target entity etc.
 #[derive(Component, Debug, Copy, Clone)]
 pub struct BehaveCtx {
@@ -57,24 +57,35 @@ impl BehaveCtx {
             ctx_type,
         }
     }
+    /// Was this context created for a trigger_req node?
     pub fn is_for_trigger(&self) -> bool {
         self.ctx_type == CtxType::Trigger
     }
+    /// Was this context created for a dynamic_spawn node?
     pub fn is_for_entity(&self) -> bool {
         self.ctx_type == CtxType::Entity
     }
+    /// Returns the event that reports success for this context.
     pub fn success(&self) -> BehaveStatusReport {
         BehaveStatusReport::Success(*self)
     }
+    /// Returns the event that reports failure for this context.
     pub fn failure(&self) -> BehaveStatusReport {
         BehaveStatusReport::Failure(*self)
     }
+    /// Returns the target entity for this context.
+    /// The target entity is typically the character or game object the behaviour tree is controlling.
+    /// See also: [`BehaveTargetEntity`]
     pub fn target_entity(&self) -> Entity {
         self.target_entity
     }
+    /// Returns the entity of the behaviour tree that this context is for.
+    /// Not typically needed in user code.
     pub fn behave_entity(&self) -> Entity {
         self.bt_entity
     }
+    /// Returns the node id of the task that this context is for.
+    /// Used internally by the tree to report status.
     pub(crate) fn task_node(&self) -> NodeId {
         self.task_node
     }
@@ -83,11 +94,14 @@ impl BehaveCtx {
 /// Trigger used to signal the completion of a spawn entity task
 #[derive(Debug, Event)]
 pub enum BehaveStatusReport {
+    /// Reports success for a task
     Success(BehaveCtx),
+    /// Reports failure for a task
     Failure(BehaveCtx),
 }
 
 impl BehaveStatusReport {
+    /// Returns the context for this status report.
     pub fn ctx(&self) -> &BehaveCtx {
         match self {
             BehaveStatusReport::Success(ctx) => ctx,

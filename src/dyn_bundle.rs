@@ -1,5 +1,9 @@
-// This is a based on https://crates.io/crates/bevy_dynamic_bundle
-// and updated for newer bevy version, with some bevy_behave specific additions.
+//! Cloneable dynamic bundles.
+//!
+//! use DynamicBundel::new() to create a dynamic bundle that can be used by dyn_spawn or dyn_insert.
+//!
+//! This is a based on https://crates.io/crates/bevy_dynamic_bundle
+//! updated for latest bevy, and with some bevy_behave specific changes.
 use bevy::ecs::system::{EntityCommand, EntityCommands};
 use bevy::prelude::{Bundle, Commands, Entity, World};
 
@@ -7,8 +11,9 @@ use dyn_clone::DynClone;
 
 use crate::ctx::BehaveCtx;
 
+/// What you need to create, insert and spawn dynamic bundles.
 pub mod prelude {
-    pub use super::{DynamicBundel, DynamicInsert, DynamicSpawn};
+    pub use super::{DynamicBundel, DynamicInsert};
 }
 
 /// we want to insert the BehaveCtx at the same time as the dynamic bundle, because we want to be
@@ -51,6 +56,7 @@ impl EntityCommand for DynamicSpawnWrapper {
 }
 
 dyn_clone::clone_trait_object!(DynEntityCommand);
+/// A dynamic bundle of components that can be inserted using `dyn_insert` or `dyn_spawn`
 #[derive(Clone)]
 pub struct DynamicBundel {
     #[allow(dead_code)]
@@ -63,6 +69,7 @@ impl std::fmt::Debug for DynamicBundel {
 }
 
 impl DynamicBundel {
+    /// Create a DynamicBundel from a normal bevy Bundle by moving into a closure
     pub fn new<T: Bundle + Clone>(bundle: T) -> DynamicBundel {
         DynamicBundel {
             bundle_fn: Box::new(insert(bundle)),
@@ -76,8 +83,10 @@ impl<T: Bundle + Clone> From<T> for DynamicBundel {
     }
 }
 
+/// Trait extension to add dyn_insert to EntityCommands
 #[allow(dead_code)]
 pub trait DynamicInsert<'a> {
+    /// Inserts a dynamic bundle of components into the entity.
     fn dyn_insert(
         &mut self,
         dyn_bundel: DynamicBundel,
@@ -104,8 +113,10 @@ struct DynamicSpawnWrapper {
     ctx: Option<BehaveCtx>,
 }
 
+/// Trait extension to add dyn_spawn to Commands
 #[allow(dead_code)]
 pub trait DynamicSpawn {
+    /// Spawns an entity with the provided dynamic bundle.
     fn dyn_spawn(&mut self, dyn_bundel: DynamicBundel, ctx: Option<BehaveCtx>) -> EntityCommands;
 }
 

@@ -1,9 +1,12 @@
+//! A behaviour tree system for bevy.
+#![doc = include_str!("../README.md")]
+#![deny(missing_docs)]
 use bevy::prelude::*;
 use ego_tree::*;
 
 mod behave_trigger;
 mod ctx;
-pub mod dyn_bundle;
+mod dyn_bundle;
 mod plugin;
 
 use behave_trigger::*;
@@ -84,9 +87,13 @@ impl std::fmt::Display for Behave {
 }
 
 impl Behave {
+    /// Creates a new Behave::DynamicEntity, which means when this node runs, a new entity
+    /// will be spawned with the components you provide in the `bundle` (as well as a [`BehaveCtx`]).
     pub fn dynamic_spawn<T: Bundle + Clone>(bundle: T) -> Behave {
         Behave::DynamicEntity(DynamicBundel::new(bundle))
     }
+    /// Creates a new Behave::TriggerReq, which means when this node runs, a trigger will be emitted
+    /// using `BehaveTrigger<T>`. You can access the `value` in an observer using `trigger.event().inner()`.
     pub fn trigger_req<T: Clone + Send + Sync + 'static>(value: T) -> Self {
         Behave::TriggerReq(DynamicTrigger::new(value))
     }
@@ -512,6 +519,8 @@ fn tick_node(
 ///         @ subtree
 ///     }
 /// };
+///
+/// I have upstreamed this to ego_tree, but it's not yet released.
 ///
 #[macro_export]
 macro_rules! behave {

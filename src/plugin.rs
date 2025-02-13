@@ -15,7 +15,7 @@ pub struct BehaveSet;
 /// Plugin to tick the `BehaveTree` components.
 /// Defaults to configuring the `BehaveSet` to run in `FixedPreUpdate`.
 pub struct BehavePlugin {
-    pub schedule: Interned<dyn ScheduleLabel>,
+    schedule: Interned<dyn ScheduleLabel>,
 }
 
 impl BehavePlugin {
@@ -24,6 +24,10 @@ impl BehavePlugin {
         Self {
             schedule: schedule.intern(),
         }
+    }
+    /// Return the schedule this plugin will run in.
+    pub fn schedule(&self) -> &Interned<dyn ScheduleLabel> {
+        &self.schedule
     }
 }
 
@@ -53,13 +57,12 @@ impl Plugin for BehavePlugin {
 /// This is required to be on the entity holding the BehaviourTree component.
 /// The actual entity (either specified here or the parent) is provided by calling
 /// `ctx.target_entity()` from the ctx component or trigger event.
-/// TODO: constructor fns and private impl to avoid confusion?
 #[derive(Component, Debug, Default)]
 pub enum BehaveTargetEntity {
-    // uses the direct parent of the behaviour tree entity
+    /// Uses the direct parent of the behaviour tree entity as the target entity.
     #[default]
     Parent,
-    // uses a specified entity
+    /// Always returns the specified entity as the target entity.
     Entity(Entity),
 }
 
@@ -105,6 +108,9 @@ fn tick_trees(
     }
 }
 
+/// The main behaviour tree component.
+/// A `bevy_behave` system will query all entities with a `BehaveTree` to tick them.
+/// (unless they have a `BehaveAwaitingTrigger` component)
 #[derive(Component)]
 #[require(BehaveTargetEntity)]
 #[require(Name(||Name::new("BehaveTree")))]
@@ -135,6 +141,9 @@ fn walk_tree(
 }
 
 impl BehaveTree {
+    /// Creates a BehaveTree from an `ego_tree::Tree<BehaveNode>`.
+    /// Typically this is created using the behave! macro, but can be
+    /// constructed using the ego_tree api too.
     pub fn new(tree: Tree<Behave>) -> Self {
         // convert to internal BehaveNode tree
         let tree = tree.map(BehaveNode::new);
@@ -195,12 +204,13 @@ impl BehaveTree {
 /// Will report success or failure after a timeout
 #[derive(Component, Debug, Clone)]
 pub struct BehaveTimeout {
-    pub duration: std::time::Duration,
-    pub should_succeed: bool,
+    duration: std::time::Duration,
+    should_succeed: bool,
     start_time: f32,
 }
 
 impl BehaveTimeout {
+    /// Creates a new BehaveTimeout which will trigger success or failure after a given duration.
     pub fn new(duration: std::time::Duration, should_succeed: bool) -> Self {
         Self {
             duration,
@@ -208,6 +218,7 @@ impl BehaveTimeout {
             start_time: 0.0,
         }
     }
+    /// Creates a new BehaveTimeout which will trigger success or failure after a given number of seconds
     pub fn from_secs(secs: f32, should_succeed: bool) -> Self {
         Self::new(std::time::Duration::from_secs(secs as u64), should_succeed)
     }

@@ -3,7 +3,7 @@ use crate::ctx::BehaveCtx;
 use bevy::prelude::*;
 use dyn_clone::DynClone;
 
-/// A wrapper around a user-provided type, which we trigger to test a condition.
+/// A wrapper around a user-provided type, which we trigger to test a condition or cause an action.
 #[derive(Event, Debug, Clone)]
 pub struct BehaveTrigger<T: Clone + Send + Sync> {
     pub(crate) inner: T,
@@ -11,9 +11,12 @@ pub struct BehaveTrigger<T: Clone + Send + Sync> {
 }
 
 impl<T: Clone + Send + Sync> BehaveTrigger<T> {
+    /// Returns the context for this trigger event.
     pub fn ctx(&self) -> &BehaveCtx {
         &self.ctx
     }
+    /// Returns the inner value of the trigger, typically the struct that was
+    /// passed to `Behave::trigger_req`.
     pub fn inner(&self) -> &T {
         &self.inner
     }
