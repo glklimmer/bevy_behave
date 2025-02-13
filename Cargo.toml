@@ -1,6 +1,6 @@
 [package]
 name = "bevy_behave"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "A behaviour tree plugin for bevy with dynamic spawning."
 repository = "https://github.com/RJ/bevy_behave"
