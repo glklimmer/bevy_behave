@@ -15,7 +15,7 @@ the action components, they are are regular bevy components using triggers to re
 
 This tree definition is from the [chase example](https://github.com/RJ/bevy_behave/blob/main/examples/chase.rs):
 
-```rust
+```rust,ignore
 let npc_entity = get_enemy_entity();
 let player_entity = get_player_entity();
 
@@ -54,7 +54,7 @@ let tree = behave! {
 
 <summary><small>You can also compose trees from subtrees</small></summary>
 
-```rust
+```rust,ignore
 // Breaking a tree into two trees and composing, just to show how it's done.
 let chase_subtree = behave! {
     Behave::Sequence => {
@@ -94,7 +94,7 @@ let tree = behave! {
 
 Once you have your tree definition, you spawn an entity to run the behaviour tree by adding a `BehaveTree` component:
 
-```rust
+```rust,ignore
 // Spawn an entity to run the behaviour tree.
 // Make it a child of the npc entity for convenience.
 // The default is to assume the Parent of the tree entity is the Target Entity you're controlling.
@@ -151,7 +151,7 @@ For your convenience:
 
 To trigger a status report on a dynamic spawn task after a timeout, use the `BehaveTimeout` helper component:
 
-```rust
+```rust,ignore
 let tree = behave! {
     Behave::dynamic_spawn((
         Name::new("Long running task that succeeds after 5 seconds"),
@@ -172,7 +172,7 @@ The observer can then respond with success or failure.
 
 
 Here's how you might combine a Sequence with a trigger_req conditional to execute a specific task if a height condition is met:
-```rust
+```rust,ignore
 let tree = behave! {
     Behave::Sequence => {
         Behave::trigger_req(HeightCheck { min_height: 10.0 }),
@@ -186,7 +186,7 @@ let tree = behave! {
 
 And the implementation:
 
-```rust
+```rust,ignore
 // TriggerReq payloads just need to be Clone.
 // They are wrapped in a BehaveTrigger, which is a bevy Event.
 #[derive(Clone)]
@@ -272,7 +272,7 @@ I have upstreamed my change to ego_tree, but it is not released to crates yet.
 
 I considered doing control flow by taking an `IntoSystem` with a defined In and Out type,
 something like this:
-```rust
+```rust,ignore
 
 pub type BoxedConditionSystem = Box<dyn System<In = In<BehaveCtx>, Out = bool>>;
 
@@ -292,7 +292,7 @@ impl Behave {
 
 Then you could defined a cond system like, which is quite convenient:
 
-```rust
+```rust,ignore
 fn check_distance(In(ctx): In<BehaveCtx>, q: Query<&Position, With<Player>>) -> bool {
     let Ok(player_pos) = q.get(ctx.target_entity).unwrap();
     player_pos.x < 100.0
