@@ -104,30 +104,17 @@ commands.spawn((
 )).set_parent(npc_entity);
 ```
 
-
 ## Control Flow Nodes
 
-The following contol flow nodes are supported. Control flow logic is part of the `BehaveTree` and doesn't spawn extra entities.
+The following control flow nodes are supported. Control flow logic is part of the `BehaveTree` and doesn't spawn extra entities.
 
-#### Behave::Sequence
-
-Runs children in sequence, failing if any child fails, succeeding if all children succeed.
-
-#### Behave::Fallback
-
-Runs children in sequence until one succeeds. If all fail, this fails. Sometimes called a Selector node.
-
-#### Behave::Invert
-
-Inverts success/failure of child. Must only have one child.
-
-#### Behave::AlwaysSucceed
-
-Succeeds instantly.
-
-#### Behave::AlwaysFail
-
-Fails instantly.
+| Node | Description |
+|------|-------------|
+| `Behave::Sequence` | Runs children in sequence, failing if any child fails, succeeding if all children succeed. |
+| `Behave::Fallback` | Runs children in sequence until one succeeds. If all fail, this fails. Sometimes called a Selector node. |
+| `Behave::Invert` | Inverts success/failure of child. Must only have one child. |
+| `Behave::AlwaysSucceed` | Succeeds instantly. |
+| `Behave::AlwaysFail` | Fails instantly. |
 
 ## Task Nodes
 
@@ -151,14 +138,14 @@ When a `Behave::trigger_req` node runs, it will trigger an event, which the user
 
 If you respond with a success or failure from the observer you can treat the event as a conditional test as part of a control flow node. Alternatively, you can use it to trigger a side effect and respond later from another system. Just make sure to copy the `BehaveCtx` so you can generate a success or failure event at your leisure.
 
-##### Example
 
-Have a look at the [chase example](https://github.com/RJ/bevy_behave/blob/main/examples/chase.rs) to see how these are used.
+
+> Have a look at the [chase example](https://github.com/RJ/bevy_behave/blob/main/examples/chase.rs) to see how these are used.
 
 
 ### Utility components
 
-`bevy_behave` provides these components you can add to your task nodes for convenience:
+For your convenience:
 
 #### Triggering completion after a timeout
 
@@ -225,13 +212,17 @@ fn on_height_check(trigger: Trigger<BehaveTrigger<HeightCheck>>, q: Query<&Posit
 
 ```
 
+It's also possible to use a trigger_req, and send the `BehaveCtx` to another system and respond later, if you're doing something with existing entities.
+
 ## Performance
+
+is good.
 
 * There's just one global observer for receiving task status reports from entities or triggers.
 * Most of the time, the work is being done in a spawned entity using one of your action components,
 and in this state, there is a marker on the tree entity so it doesn't tick or do anything until
 a result is ready.
-* Avoided mut World systems – the tree ticking should be able to run in parallel with other things (i think).
+* Avoided mut World systems – the tree ticking should be able to run in parallel with other things.
 * So a fairly minimal wrapper around basic bevy systems.
 
 In release mode, i can happily toss 100k enemies in the chase demo and zoom around at max framerate.
