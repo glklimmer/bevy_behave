@@ -602,13 +602,30 @@ fn tick_node(
 ///
 /// I have upstreamed this to ego_tree, but it's not yet released.
 ///
+/// Also supports appending a list of children from an iterator:
+///
+/// let children: Vec<Behave> = get_children();
+/// let t = tree! {
+///     Behave::Sequence => {
+///         @[ children ]
+///     }
+/// };
 #[macro_export]
 macro_rules! behave {
+    // Append a bunch of children from an iterator
+    (@ $n:ident { @[ $children:expr ] $(, $($tail:tt)*)? }) => {{
+        for child in $children {
+            $n.append(child);
+        }
+        $( behave!(@ $n { $($tail)* }); )?
+    }};
+
     // Use an “@” marker to indicate that the expression is a subtree, to be merged into the tree.
     (@ $n:ident { @ $subtree:expr $(, $($tail:tt)*)? }) => {{
         $n.append_subtree($subtree);
         $( behave!(@ $n { $($tail)* }); )?
     }};
+
 
     // Base case: no tokens left.
     (@ $n:ident { }) => { };
