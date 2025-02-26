@@ -5,6 +5,9 @@ use bevy_screen_diagnostics::{
     ScreenDiagnosticsPlugin, ScreenEntityDiagnosticsPlugin, ScreenFrameDiagnosticsPlugin,
 };
 
+/// ask BehaveTree to log transitions. verbose with logs of enemies!
+const ENABLE_LOGGING: bool = false;
+
 fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -37,10 +40,11 @@ fn chase_plugin(app: &mut App) {
 }
 
 // all dynamic spawn components are inserted at the same time as the BehaveCtx,
-// so if you add a Name component you can see it when a new behaviour is spawned:
-fn on_new_behaviour(trigger: Trigger<OnAdd, BehaveCtx>, q: Query<(&Name, &BehaveCtx)>) {
-    if let Ok((name, ctx)) = q.get(trigger.entity()) {
-        info!("New behaviour spawned {ctx} = {}", name.as_str());
+// so if you used the _named fn, or included a Name in the bundle, you can log them like this
+// whenever a new entity for a task node is spawned:
+fn on_new_behaviour(trigger: Trigger<OnAdd, BehaveCtx>, q: Query<(Entity, &Name, &BehaveCtx)>) {
+    if let Ok((entity, name, ctx)) = q.get(trigger.entity()) {
+        info!("New behaviour spawned {entity} {ctx} = {}", name.as_str());
     }
 }
 
@@ -84,7 +88,7 @@ fn init(mut commands: Commands) {
     commands.spawn(Player);
 
     // spawn enemies
-    commands.trigger(SpawnEnemies(1000));
+    commands.trigger(SpawnEnemies(5));
 }
 
 #[derive(Event)]
@@ -119,18 +123,21 @@ fn on_spawn_enemies(
     let tree = tree! {
         Behave::Forever => {
             Behave::Sequence => {
-                Behave::dynamic_spawn((
+                // because we're not using spawn_named here, there won't be a pretty name for the node
+                // in any debug log output that bevy_behave generates
+                Behave::spawn((
                     Name::new("Wait until player is near"),
                     WaitUntilPlayerIsNear{player: *player}
                 )),
                 Behave::Sequence => {
-                    Behave::dynamic_spawn((
-                        Name::new("Move towards player while in range"),
+                    // to get a nice name in the logs, and to automatically include a Name component in
+                    // the bundle, use spawn_named:
+                    Behave::spawn_named("Move towards player while in range",
                         MoveTowardsPlayer{player: *player, speed: ENEMY_SPEED}
-                    )),
+                    ),
                     // MoveTowardsPlayer suceeds if we catch them, in which randomize our colour.
                     // This uses a trigger to take an action without spawning an entity.
-                    Behave::trigger_req(RandomizeColour),
+                    Behave::trigger(RandomizeColour),
                     // then have a nap (pause execution of the tree)
                     // NB: this only runs if the trigger_req was successful, since it's in a Sequence.
                     Behave::Wait(5.0),
@@ -142,26 +149,33 @@ fn on_spawn_enemies(
     let num = trigger.event().0;
     for _ in 0..num {
         // give enemy a random starting position and vision radius
-        let x = rand::random::<f32>() * 10000.0 - 5000.0;
-        let y = rand::random::<f32>() * 10000.0 - 5000.0;
-        let vision_radius =
-            rand::random::<f32>() * (ENEMY_VISION_RADIUS / 2.0) + (ENEMY_VISION_RADIUS / 2.0);
+        let (x, y, vision_radius) = get_random_enemy_vals();
 
-        let enemy = commands
+        // the default is to assume the Parent entity is the target the tree is controlling,
+        // so we add the behaviour tree as a child. This way recursivly despawning an enemy
+        // will remove the tree also.
+        // since task nodes are children of the tree entity, you can chop and change the tree
+        // at will and everything will be cleaned up by recursive despawning.
+        commands
             .spawn((
                 Enemy,
                 VisionRadius(vision_radius),
                 Transform::from_xyz(x, y, 0.),
             ))
-            .id();
-
-        // default is to assume the Parent entity is the target the tree is controlling,
-        // so we add the tree as a child. This way recursivly despawning enemies will remove
-        // the tree also.
-        commands
-            .spawn(BehaveTree::new(tree.clone()))
-            .set_parent(enemy);
+            .with_child((
+                Name::new("Wait and chase behaviour"),
+                BehaveTree::new(tree.clone()).with_logging(ENABLE_LOGGING),
+            ));
     }
+}
+
+// random starting position and vision radius for an enemy
+fn get_random_enemy_vals() -> (f32, f32, f32) {
+    let x = rand::random::<f32>() * 10000.0 - 5000.0;
+    let y = rand::random::<f32>() * 10000.0 - 5000.0;
+    let vision_radius =
+        rand::random::<f32>() * (ENEMY_VISION_RADIUS / 2.0) + (ENEMY_VISION_RADIUS / 2.0);
+    (x, y, vision_radius)
 }
 
 #[derive(Component, Clone)]

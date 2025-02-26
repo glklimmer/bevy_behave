@@ -1,6 +1,8 @@
 //! A behaviour tree system for bevy.
 #![doc = include_str!("../README.md")]
 #![deny(missing_docs)]
+use std::borrow::Cow;
+
 use bevy::prelude::*;
 use ego_tree::*;
 
@@ -30,10 +32,18 @@ pub mod prelude {
 /// A node on the behave tree can be in one of these states
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum BehaveNodeStatus {
+    /// Node reported success
     Success,
+    /// Node reported failure
     Failure,
+    /// A task is in progress
     Running,
+    /// Ticking to await a timer
+    RunningTimer,
+    /// Ticking suspended until trigger reports a status
     AwaitingTrigger,
+    /// Next tick, reset node and descendants to initial state, for re-running.
+    PendingReset,
 }
 
 /// Inserted on the entity with the BehaveTree when the tree has finished executing.
@@ -51,8 +61,13 @@ pub enum Behave {
     /// Waits this many seconds before Succeeding
     Wait(f32),
     /// Spawns an entity, and waits for it to trigger a status report
-    /// Use the Behaviour::spawn_entity constructor, or import dyn_bundle (not in prelude)
-    DynamicEntity(DynamicBundel),
+    /// Use the Behaviour::dynamic_bundle fn to create.
+    DynamicEntity {
+        /// The name value of the Name component for this entity.
+        name: Cow<'static, str>,
+        /// The dynamic bundle to spawn.
+        dynamic_bundel: DynamicBundel,
+    },
     /// Runs children in sequence, failing if any fails, succeeding if all succeed
     Sequence,
     /// Runs children in sequence until one succeeds. If all fail, this fails.
@@ -74,7 +89,7 @@ impl std::fmt::Display for Behave {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Behave::Wait(secs) => write!(f, "Wait({secs}s)"),
-            Behave::DynamicEntity(_) => write!(f, "DynamicEntity"),
+            Behave::DynamicEntity { name, .. } => write!(f, "DynamicEntity({name})"),
             Behave::Sequence => write!(f, "Sequence"),
             Behave::Fallback => write!(f, "Fallback"),
             Behave::Invert => write!(f, "Invert"),
@@ -89,12 +104,29 @@ impl std::fmt::Display for Behave {
 impl Behave {
     /// Creates a new Behave::DynamicEntity, which means when this node runs, a new entity
     /// will be spawned with the components you provide in the `bundle` (as well as a [`BehaveCtx`]).
-    pub fn dynamic_spawn<T: Bundle + Clone>(bundle: T) -> Behave {
-        Behave::DynamicEntity(DynamicBundel::new(bundle))
+    pub fn spawn<T: Bundle + Clone>(bundle: T) -> Behave {
+        Behave::DynamicEntity {
+            name: "unnamed".into(),
+            dynamic_bundel: DynamicBundel::new(bundle),
+        }
+    }
+    /// Creates a new named Behave::DynamicEntity, which means when this node runs, a new entity
+    /// will be spawned with:
+    /// * the components you provide in the `bundle`
+    /// * A bevy `Name` component with the value of `name`
+    /// * [`BehaveCtx`]
+    ///
+    /// **NB** Don't include a `Name`` component in the bundle, since this fn adds on based on `name`.
+    pub fn spawn_named<T: Bundle + Clone>(name: impl Into<Cow<'static, str>>, bundle: T) -> Behave {
+        let name = name.into();
+        Behave::DynamicEntity {
+            name: name.clone(),
+            dynamic_bundel: DynamicBundel::new((Name::new(name), bundle)),
+        }
     }
     /// Creates a new Behave::TriggerReq, which means when this node runs, a trigger will be emitted
     /// using `BehaveTrigger<T>`. You can access the `value` in an observer using `trigger.event().inner()`.
-    pub fn trigger_req<T: Clone + Send + Sync + 'static>(value: T) -> Self {
+    pub fn trigger<T: Clone + Send + Sync + 'static>(value: T) -> Self {
         Behave::TriggerReq(DynamicTrigger::new(value))
     }
 }
@@ -116,6 +148,7 @@ pub(crate) enum BehaveNode {
         task_status: EntityTaskStatus,
         status: Option<BehaveNodeStatus>,
         bundle: DynamicBundel,
+        name: Cow<'static, str>,
     },
     SequenceFlow {
         status: Option<BehaveNodeStatus>,
@@ -154,7 +187,20 @@ enum TriggerTaskStatus {
 }
 
 impl BehaveNode {
-    fn existing_status(&self) -> &Option<BehaveNodeStatus> {
+    fn status(&self) -> &Option<BehaveNodeStatus> {
+        match self {
+            BehaveNode::Forever { status } => status,
+            BehaveNode::TriggerReq { status, .. } => status,
+            BehaveNode::Wait { status, .. } => status,
+            BehaveNode::DynamicEntity { status, .. } => status,
+            BehaveNode::SequenceFlow { status } => status,
+            BehaveNode::FallbackFlow { status } => status,
+            BehaveNode::Invert { status } => status,
+            BehaveNode::AlwaysSucceed { status } => status,
+            BehaveNode::AlwaysFail { status } => status,
+        }
+    }
+    fn status_mut(&mut self) -> &mut Option<BehaveNodeStatus> {
         match self {
             BehaveNode::Forever { status } => status,
             BehaveNode::TriggerReq { status, .. } => status,
@@ -176,18 +222,20 @@ impl std::fmt::Display for BehaveNode {
             BehaveNode::Forever { .. } => write!(f, "Forever")?,
             BehaveNode::TriggerReq { trigger, .. } => write!(f, "TriggerReq({})", trigger.type_name())?,
             BehaveNode::Wait { secs_to_wait, .. } => write!(f, "Wait({secs_to_wait})")?,
-            BehaveNode::DynamicEntity { .. } => write!(f, "SpawnTask")?,
+            BehaveNode::DynamicEntity {name, .. } => write!(f, "DynamicEntity({name})")?,
             BehaveNode::SequenceFlow { .. } => write!(f, "SequenceFlow")?,
             BehaveNode::FallbackFlow { .. } => write!(f, "FallbackFlow")?,
             BehaveNode::Invert { .. } => write!(f, "Invert")?,
             BehaveNode::AlwaysSucceed { .. } => write!(f, "AlwaysSucceed")?,
             BehaveNode::AlwaysFail { .. } => write!(f, "AlwaysFail")?,
         }
-        match self.existing_status() {
+        match self.status() {
             Some(BehaveNodeStatus::Success) => write!(f, " --> ✅"),
             Some(BehaveNodeStatus::Failure) => write!(f, " --> ❌"),
             Some(BehaveNodeStatus::Running) => write!(f, " --> ⏳"),
+            Some(BehaveNodeStatus::RunningTimer) => write!(f, " --> ⏳"),
             Some(BehaveNodeStatus::AwaitingTrigger) => write!(f, " --> ⏳"),
+            Some(BehaveNodeStatus::PendingReset) => write!(f, " --> 🔄"),
             _ => Ok(()),
         }
     }
@@ -251,10 +299,14 @@ impl BehaveNode {
                 secs_to_wait,
                 status: None,
             },
-            Behave::DynamicEntity(bundle) => Self::DynamicEntity {
+            Behave::DynamicEntity {
+                name,
+                dynamic_bundel: bundle,
+            } => Self::DynamicEntity {
                 task_status: EntityTaskStatus::NotStarted,
                 status: None,
                 bundle,
+                name,
             },
             Behave::Sequence => Self::SequenceFlow { status: None },
             Behave::Fallback => Self::FallbackFlow { status: None },
@@ -283,33 +335,43 @@ fn tick_node(
     commands: &mut Commands,
     bt_entity: Entity,
     target_entity: Entity,
+    logging: bool,
 ) -> BehaveNodeStatus {
     use BehaveNode::*;
-    debug!("tick_node: {:?} = {}", n.id(), n.value());
-    // short circuit nodes that have already got a result, or are blocked waiting for a trigger
-    match n.value().existing_status() {
-        None => {}
-        Some(BehaveNodeStatus::Running) => {}
-        Some(BehaveNodeStatus::AwaitingTrigger) => {}
+    // if logging {
+    //     info!("tick_node: {:?} = {}", n.id(), n.value());
+    // }
+    // short circuit nodes that have already got a result
+    let reset_needed = match n.value().status() {
         Some(BehaveNodeStatus::Success) => return BehaveNodeStatus::Success,
         Some(BehaveNodeStatus::Failure) => return BehaveNodeStatus::Failure,
+        Some(BehaveNodeStatus::PendingReset) => true,
+        _ => false,
+    };
+    if reset_needed {
+        *n.value().status_mut() = Some(BehaveNodeStatus::Running);
+        reset_descendants(n);
     }
     let task_node = n.id();
     match n.value() {
         Forever { .. } => {
-            let Forever { status } = n.value() else {
-                unreachable!("Must be a Forever");
-            };
-            *status = Some(BehaveNodeStatus::Running);
+            *n.value().status_mut() = Some(BehaveNodeStatus::Running);
             let mut only_child = n.first_child().expect("Forever nodes must have a child");
             if only_child.has_siblings() {
                 panic!("Forever nodes must have a single child, not multiple children");
             }
-            match tick_node(&mut only_child, time, commands, bt_entity, target_entity) {
+            match tick_node(
+                &mut only_child,
+                time,
+                commands,
+                bt_entity,
+                target_entity,
+                logging,
+            ) {
+                // if our child node completes, reset next tick so we can run it again
                 BehaveNodeStatus::Success | BehaveNodeStatus::Failure => {
-                    // reset so we can run it again next tick
-                    reset_descendants(&mut only_child);
-                    BehaveNodeStatus::Running
+                    *n.value().status_mut() = Some(BehaveNodeStatus::PendingReset);
+                    BehaveNodeStatus::PendingReset
                 }
                 other => other,
             }
@@ -350,11 +412,17 @@ fn tick_node(
             if only_child.has_siblings() {
                 panic!("Invert nodes must have a single child, not multiple children");
             }
-            let res = match tick_node(&mut only_child, time, commands, bt_entity, target_entity) {
+            let res = match tick_node(
+                &mut only_child,
+                time,
+                commands,
+                bt_entity,
+                target_entity,
+                logging,
+            ) {
                 BehaveNodeStatus::Success => BehaveNodeStatus::Failure, // swapped
                 BehaveNodeStatus::Failure => BehaveNodeStatus::Success, // swapped
-                BehaveNodeStatus::Running => BehaveNodeStatus::Running,
-                BehaveNodeStatus::AwaitingTrigger => BehaveNodeStatus::AwaitingTrigger,
+                other => other,
             };
             let Invert { status } = n.value() else {
                 unreachable!("Must be an Invert");
@@ -393,17 +461,15 @@ fn tick_node(
                 *status = Some(BehaveNodeStatus::Success);
                 return BehaveNodeStatus::Success;
             }
-            BehaveNodeStatus::Running
+            BehaveNodeStatus::RunningTimer
         }
         // spawn a new entity for this task
         DynamicEntity {
             task_status: task_status @ EntityTaskStatus::NotStarted,
             status,
             bundle,
+            name: _,
         } => {
-            // bit of extra archetype moving here for now, but i need the ctx to be on the entity
-            // before the user's components, so it can be found in an OnAdd trigger.
-            // might change dyn_insert to allow extra component at insertion time..
             let mut e = commands.spawn(());
             e.set_parent(bt_entity);
             let ctx = BehaveCtx::new_for_entity(bt_entity, task_node, target_entity);
@@ -451,7 +517,14 @@ fn tick_node(
 
             let mut final_status;
             loop {
-                match tick_node(&mut child, time, commands, bt_entity, target_entity) {
+                match tick_node(
+                    &mut child,
+                    time,
+                    commands,
+                    bt_entity,
+                    target_entity,
+                    logging,
+                ) {
                     BehaveNodeStatus::Success => {
                         final_status = BehaveNodeStatus::Success;
                         if let Ok(next_child) = child.into_next_sibling() {
@@ -483,7 +556,14 @@ fn tick_node(
 
             let mut final_status;
             loop {
-                match tick_node(&mut child, time, commands, bt_entity, target_entity) {
+                match tick_node(
+                    &mut child,
+                    time,
+                    commands,
+                    bt_entity,
+                    target_entity,
+                    logging,
+                ) {
                     BehaveNodeStatus::Failure => {
                         // a child fails, try the next one, or if no more children, we failed.
                         final_status = BehaveNodeStatus::Failure;

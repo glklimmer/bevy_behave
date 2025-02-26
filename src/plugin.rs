@@ -86,14 +86,14 @@ fn tick_trees(
     time: Res<Time>,
 ) {
     for (bt_entity, mut bt, opt_parent, target_entity) in query.iter_mut() {
-        // info!("Ticking tree {bt_entity:?} (with parent: {opt_parent:?})");
         let target_entity = match target_entity {
             BehaveTargetEntity::Parent => {
                 opt_parent.map(|p| p.get()).unwrap_or(Entity::PLACEHOLDER)
             }
             BehaveTargetEntity::Entity(e) => *e,
         };
-        match bt.tick(&time, &mut commands, bt_entity, target_entity) {
+        let tick_result = bt.tick(&time, &mut commands, bt_entity, target_entity);
+        match tick_result {
             BehaveNodeStatus::AwaitingTrigger => {
                 commands.entity(bt_entity).insert(BehaveAwaitingTrigger);
             }
@@ -103,7 +103,12 @@ fn tick_trees(
             BehaveNodeStatus::Failure => {
                 commands.entity(bt_entity).insert(BehaveFinished(false));
             }
+            BehaveNodeStatus::RunningTimer => {}
             BehaveNodeStatus::Running => {}
+            BehaveNodeStatus::PendingReset => {}
+        }
+        if bt.logging && tick_result != BehaveNodeStatus::RunningTimer {
+            info!("tick_tree: {bt_entity}\n{}", bt.tree);
         }
     }
 }
@@ -116,6 +121,7 @@ fn tick_trees(
 #[require(Name(||Name::new("BehaveTree")))]
 pub struct BehaveTree {
     tree: Tree<BehaveNode>,
+    logging: bool,
 }
 impl std::fmt::Display for BehaveTree {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -147,7 +153,16 @@ impl BehaveTree {
     pub fn new(tree: Tree<Behave>) -> Self {
         // convert to internal BehaveNode tree
         let tree = tree.map(BehaveNode::new);
-        Self { tree }
+        Self {
+            tree,
+            logging: false,
+        }
+    }
+
+    /// Should verbose logging be enabled? (typically just for debugging).
+    pub fn with_logging(mut self, enabled: bool) -> Self {
+        self.logging = enabled;
+        self
     }
 
     fn tick(
@@ -158,7 +173,14 @@ impl BehaveTree {
         target_entity: Entity,
     ) -> BehaveNodeStatus {
         let mut node = self.tree.root_mut();
-        tick_node(&mut node, time, commands, bt_entity, target_entity)
+        tick_node(
+            &mut node,
+            time,
+            commands,
+            bt_entity,
+            target_entity,
+            self.logging,
+        )
     }
 
     /// Returns Option<Entity> being an entity that was spawned to run this task node.
@@ -178,18 +200,22 @@ impl BehaveTree {
                         None
                     }
                 };
-                // info!(
-                //     "Setting Dynamic Entity task for {node_id:?} success to {:?}",
-                //     success
-                // );
+                if self.logging {
+                    debug!(
+                        "Setting Dynamic Entity task for {node_id:?} success to {:?}",
+                        success
+                    );
+                }
                 *task_status = EntityTaskStatus::Complete(success);
                 task_entity
             }
             BehaveNode::TriggerReq { task_status, .. } => {
-                // info!(
-                //     "Setting conditional task for {node_id:?} success to {:?}",
-                //     success
-                // );
+                if self.logging {
+                    debug!(
+                        "Setting conditional task for {node_id:?} success to {:?}",
+                        success
+                    );
+                }
                 *task_status = TriggerTaskStatus::Complete(success);
                 None
             }

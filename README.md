@@ -35,18 +35,18 @@ let player_entity = get_player_entity();
 let tree = behave! {
     Behave::Forever => {
         Behave::Sequence => {
-            Behave::dynamic_spawn((
+            Behave::spawn((
                 Name::new("Wait until player is near"),
                 WaitUntilPlayerIsNear{player: *player}
             )),
             Behave::Sequence => {
-                Behave::dynamic_spawn((
+                Behave::spawn((
                     Name::new("Move towards player while in range"),
                     MoveTowardsPlayer{player: *player, speed: ENEMY_SPEED}
                 )),
                 // MoveTowardsPlayer suceeds if we catch them, in which randomize our colour.
                 // This uses a trigger to take an action without spawning an entity.
-                Behave::trigger_req(RandomizeColour),
+                Behave::trigger(RandomizeColour),
                 // then have a nap (pause execution of the tree)
                 // NB: this only runs if the trigger_req was successful, since it's in a Sequence.
                 Behave::Wait(5.0),
@@ -65,13 +65,13 @@ let tree = behave! {
 // Breaking a tree into two trees and composing, just to show how it's done.
 let chase_subtree = behave! {
     Behave::Sequence => {
-        Behave::dynamic_spawn((
+        Behave::spawn((
             Name::new("Move towards player while in range"),
             MoveTowardsPlayer{player_entity, speed: 100.0}
         )),
         // MoveTowardsPlayer suceeds if we catch them, in which randomize our colour.
         // This uses a trigger to take an action without spawning an entity.
-        Behave::trigger_req(RandomizeColour),
+        Behave::trigger(RandomizeColour),
         // then have a nap (pause execution of the tree)
         // NB: this only runs if the trigger_req was successful, since it's in a Sequence.
         Behave::Wait(5.0),
@@ -84,7 +84,7 @@ let tree = behave! {
         Behave::Sequence => {
             // WAIT FOR THE PLAYER TO GET CLOSE
             // Spawn with any normal components that will control the target entity:
-            Behave::dynamic_spawn((
+            Behave::spawn((
                 Name::new("Wait until player is near"),
                 WaitUntilPlayerIsNear{player_entity}
             )),
@@ -131,17 +131,19 @@ Task nodes are leaves of the tree which take some action, typically doing someth
 
 Waits a given duration before Succeeding. The timer is ticked by the tree itself, so no entities are spawned.
 
-#### Behave::dynamic_spawn(...)
+#### Behave::spawn(...) and Behave::spawn_named(...)
 
-When a `Behave::dynamic_spawn` node runs, a new entity is spawned with the components you provided along with a
+When a `Behave::spawn` (or `Behave::spawn_named`) node runs, a new entity is spawned with the components you provided along with a
 `BehaveCtx` component, which will tell you the target entity the tree is controlling, and a
 mechanism to trigger a status report for success or failure.
 
 Once a result is reported, the entity is despawned.
 
-#### Behave::trigger_req(...)
+The `spawn_named` variant also adds a `Name` component to the spawned entity, and exposes this name in debug logging.
 
-When a `Behave::trigger_req` node runs, it will trigger an event, which the user observes and can either respond to with a success or failure immediately, or respond later from another system.
+#### Behave::trigger(...)
+
+When a `Behave::trigger` node runs, it will trigger an event, which the user observes and can either respond to with a success or failure immediately, or respond later from another system.
 
 If you respond with a success or failure from the observer you can treat the event as a conditional test as part of a control flow node. Alternatively, you can use it to trigger a side effect and respond later from another system. Just make sure to copy the `BehaveCtx` so you can generate a success or failure event at your leisure.
 
@@ -160,8 +162,7 @@ To trigger a status report on a dynamic spawn task after a timeout, use the `Beh
 
 ```rust,ignore
 let tree = behave! {
-    Behave::dynamic_spawn((
-        Name::new("Long running task that succeeds after 5 seconds"),
+    Behave::spawn_named("Long running task that succeeds after 5 seconds", (
         LongRunningTaskComp::new(),
         BehaveTimeout::from_secs(5.0, true)
     ))
@@ -182,8 +183,8 @@ Here's how you might combine a Sequence with a trigger_req conditional to execut
 ```rust,ignore
 let tree = behave! {
     Behave::Sequence => {
-        Behave::trigger_req(HeightCheck { min_height: 10.0 }),
-        Behave::dynamic_spawn((
+        Behave::trigger(HeightCheck { min_height: 10.0 }),
+        Behave::spawn((
             Name::new("Doing the thing because we are high enough"),
             DoSomethingIfHigh::default(),
         )),
