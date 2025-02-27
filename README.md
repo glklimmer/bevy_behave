@@ -208,7 +208,7 @@ app.add_observer(on_height_check);
 // you respond by triggering a success or failure event created by the ctx:
 fn on_height_check(trigger: Trigger<BehaveTrigger<HeightCheck>>, q: Query<&Position>, mut commands: Commands) {
     let ctx: BehaveCtx = trigger.event().ctx();
-    let height_check: HeightCheck = trigger.event().value();
+    let height_check: HeightCheck = trigger.event().inner();
     // lookup the position of the target entity (ie the entity this behaviour tree is controlling)
     let character_pos = q.get(ctx.target_entity()).expect("Character entity missing?");
     if character_pos.y >= height_check.min_height {
