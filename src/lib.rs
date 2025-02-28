@@ -83,11 +83,14 @@ pub enum Behave {
     TriggerReq(DynamicTrigger),
     /// Loops forever
     Forever,
+    /// Runs second child as long as first child succeeds, in a loop.
+    While,
 }
 
 impl std::fmt::Display for Behave {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Behave::While => write!(f, "While"),
             Behave::Wait(secs) => write!(f, "Wait({secs}s)"),
             Behave::DynamicEntity { name, .. } => write!(f, "DynamicEntity({name})"),
             Behave::Sequence => write!(f, "Sequence"),
@@ -170,6 +173,9 @@ pub(crate) enum BehaveNode {
         task_status: TriggerTaskStatus,
         trigger: DynamicTrigger,
     },
+    While {
+        status: Option<BehaveNodeStatus>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -198,6 +204,7 @@ impl BehaveNode {
             BehaveNode::Invert { status } => status,
             BehaveNode::AlwaysSucceed { status } => status,
             BehaveNode::AlwaysFail { status } => status,
+            BehaveNode::While { status } => status,
         }
     }
     fn status_mut(&mut self) -> &mut Option<BehaveNodeStatus> {
@@ -211,6 +218,7 @@ impl BehaveNode {
             BehaveNode::Invert { status } => status,
             BehaveNode::AlwaysSucceed { status } => status,
             BehaveNode::AlwaysFail { status } => status,
+            BehaveNode::While { status } => status,
         }
     }
 }
@@ -228,6 +236,7 @@ impl std::fmt::Display for BehaveNode {
             BehaveNode::Invert { .. } => write!(f, "Invert")?,
             BehaveNode::AlwaysSucceed { .. } => write!(f, "AlwaysSucceed")?,
             BehaveNode::AlwaysFail { .. } => write!(f, "AlwaysFail")?,
+            BehaveNode::While { .. } => write!(f, "While")?,
         }
         match self.status() {
             Some(BehaveNodeStatus::Success) => write!(f, " --> ✅"),
@@ -284,6 +293,9 @@ impl BehaveNode {
             BehaveNode::AlwaysFail { status } => {
                 *status = None;
             }
+            BehaveNode::While { status } => {
+                *status = None;
+            }
         }
     }
     pub(crate) fn new(behave: Behave) -> Self {
@@ -308,6 +320,7 @@ impl BehaveNode {
                 bundle,
                 name,
             },
+            Behave::While => Self::While { status: None },
             Behave::Sequence => Self::SequenceFlow { status: None },
             Behave::Fallback => Self::FallbackFlow { status: None },
             Behave::Invert => Self::Invert { status: None },
@@ -354,6 +367,50 @@ fn tick_node(
     }
     let task_node = n.id();
     match n.value() {
+        While { .. } => {
+            *n.value().status_mut() = Some(BehaveNodeStatus::Running);
+            let mut first_child = n
+                .first_child()
+                .expect("While node first child must exist (the conditional)");
+            match tick_node(
+                &mut first_child,
+                time,
+                commands,
+                bt_entity,
+                target_entity,
+                logging,
+            ) {
+                BehaveNodeStatus::Success => {
+                    // if the conditional succeeds, we run the second child
+                    let mut second_child = first_child
+                        .next_sibling()
+                        .expect("While node second child must exist (the body)");
+                    match tick_node(
+                        &mut second_child,
+                        time,
+                        commands,
+                        bt_entity,
+                        target_entity,
+                        logging,
+                    ) {
+                        BehaveNodeStatus::Success => {
+                            *second_child.value().status_mut() = Some(BehaveNodeStatus::Success);
+                            // if the body succeeds, we loop back to the conditional
+                            *n.value().status_mut() = Some(BehaveNodeStatus::PendingReset);
+                            BehaveNodeStatus::PendingReset
+                        }
+                        other => {
+                            *n.value().status_mut() = Some(other);
+                            other
+                        }
+                    }
+                }
+                other => {
+                    *n.value().status_mut() = Some(other);
+                    other
+                }
+            }
+        }
         Forever { .. } => {
             *n.value().status_mut() = Some(BehaveNodeStatus::Running);
             let mut only_child = n.first_child().expect("Forever nodes must have a child");
@@ -400,12 +457,12 @@ fn tick_node(
             *status = Some(BehaveNodeStatus::Failure);
             BehaveNodeStatus::Failure
         }
+        // in this case, the trigger didn't report a result immediately, so we go into awaiting trigger mode.
+        // this happens if the trigger hands the ctx off to another system to report the result later.
         #[rustfmt::skip]
         TriggerReq {task_status: TriggerTaskStatus::Triggered, status, .. } => {
-            unreachable!(
-                "Should have short circuited while awaiting trigger? returning: {:?}",
-                status.unwrap()
-            )
+            *status = Some(BehaveNodeStatus::AwaitingTrigger);
+            BehaveNodeStatus::AwaitingTrigger
         }
         Invert { .. } => {
             let mut only_child = n.first_child().expect("Invert nodes must have a child");

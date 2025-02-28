@@ -115,13 +115,14 @@ commands.spawn((
 
 The following control flow nodes are supported. Control flow logic is part of the `BehaveTree` and doesn't spawn extra entities.
 
-| Node | Description |
-|------|-------------|
-| `Behave::Sequence` | Runs children in sequence, failing if any child fails, succeeding if all children succeed. |
-| `Behave::Fallback` | Runs children in sequence until one succeeds. If all fail, this fails. Sometimes called a Selector node. |
-| `Behave::Invert` | Inverts success/failure of child. Must only have one child. |
-| `Behave::AlwaysSucceed` | Succeeds instantly. |
-| `Behave::AlwaysFail` | Fails instantly. |
+| Node                    | Description                                                                                              |
+| ----------------------- | -------------------------------------------------------------------------------------------------------- |
+| `Behave::Sequence`      | Runs children in sequence, failing if any child fails, succeeding if all children succeed.               |
+| `Behave::Fallback`      | Runs children in sequence until one succeeds. If all fail, this fails. Sometimes called a Selector node. |
+| `Behave::Invert`        | Inverts success/failure of child. Must only have one child.                                              |
+| `Behave::AlwaysSucceed` | Succeeds instantly.                                                                                      |
+| `Behave::AlwaysFail`    | Fails instantly.                                                                                         |
+| `Behave::While`         | Runs the second child repeatedly, provided the first child returns success                               |
 
 ## Task Nodes
 
