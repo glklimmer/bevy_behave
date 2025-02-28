@@ -41,6 +41,7 @@ impl Default for BehavePlugin {
 impl Plugin for BehavePlugin {
     fn build(&self, app: &mut App) {
         app.configure_sets(self.schedule, BehaveSet);
+        app.register_type::<BehaveTimeout>();
         app.add_systems(
             self.schedule,
             (tick_timeout_components, tick_trees)
@@ -228,7 +229,7 @@ impl BehaveTree {
 }
 
 /// Will report success or failure after a timeout
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, Reflect)]
 pub struct BehaveTimeout {
     duration: std::time::Duration,
     should_succeed: bool,
