@@ -51,11 +51,18 @@ fn on_my_condition(
     }
 }
 
-fn on_my_action(trigger: Trigger<BehaveTrigger<MyAction>>, mut commands: Commands) {
+fn on_my_action(
+    trigger: Trigger<BehaveTrigger<MyAction>>,
+    mut commands: Commands,
+    time: Res<Time>,
+) {
     info!("MyAction!");
     // commands.trigger(trigger.event().ctx().success());
     // let's pretend we're doing something clever, and reporting success after a delay:
-    commands.insert_resource(DelayedReporter(1.0, *trigger.event().ctx()));
+    commands.insert_resource(DelayedReporter(
+        time.elapsed_secs() + 1.0,
+        *trigger.event().ctx(),
+    ));
 }
 
 fn init(mut commands: Commands) {
