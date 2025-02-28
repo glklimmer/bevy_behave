@@ -85,6 +85,9 @@ pub enum Behave {
     Forever,
     /// Runs second child as long as first child succeeds, in a loop.
     While,
+    /// If the first child succeeds, run the second child.
+    /// (otherwise, run the third child, if present)
+    IfThen,
 }
 
 impl std::fmt::Display for Behave {
@@ -100,6 +103,7 @@ impl std::fmt::Display for Behave {
             Behave::AlwaysFail => write!(f, "AlwaysFail"),
             Behave::TriggerReq(t) => write!(f, "TriggerReq({})", t.type_name()),
             Behave::Forever => write!(f, "Forever"),
+            Behave::IfThen => write!(f, "IfThen"),
         }
     }
 }
@@ -176,6 +180,9 @@ pub(crate) enum BehaveNode {
     While {
         status: Option<BehaveNodeStatus>,
     },
+    IfThen {
+        status: Option<BehaveNodeStatus>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -205,6 +212,7 @@ impl BehaveNode {
             BehaveNode::AlwaysSucceed { status } => status,
             BehaveNode::AlwaysFail { status } => status,
             BehaveNode::While { status } => status,
+            BehaveNode::IfThen { status } => status,
         }
     }
     fn status_mut(&mut self) -> &mut Option<BehaveNodeStatus> {
@@ -219,6 +227,7 @@ impl BehaveNode {
             BehaveNode::AlwaysSucceed { status } => status,
             BehaveNode::AlwaysFail { status } => status,
             BehaveNode::While { status } => status,
+            BehaveNode::IfThen { status } => status,
         }
     }
 }
@@ -237,6 +246,7 @@ impl std::fmt::Display for BehaveNode {
             BehaveNode::AlwaysSucceed { .. } => write!(f, "AlwaysSucceed")?,
             BehaveNode::AlwaysFail { .. } => write!(f, "AlwaysFail")?,
             BehaveNode::While { .. } => write!(f, "While")?,
+            BehaveNode::IfThen { .. } => write!(f, "IfThen")?,
         }
         match self.status() {
             Some(BehaveNodeStatus::Success) => write!(f, " --> ✅"),
@@ -296,6 +306,9 @@ impl BehaveNode {
             BehaveNode::While { status } => {
                 *status = None;
             }
+            BehaveNode::IfThen { status } => {
+                *status = None;
+            }
         }
     }
     pub(crate) fn new(behave: Behave) -> Self {
@@ -326,6 +339,7 @@ impl BehaveNode {
             Behave::Invert => Self::Invert { status: None },
             Behave::AlwaysSucceed => Self::AlwaysSucceed { status: None },
             Behave::AlwaysFail => Self::AlwaysFail { status: None },
+            Behave::IfThen => Self::IfThen { status: None },
         }
     }
 }
@@ -381,28 +395,97 @@ fn tick_node(
                 logging,
             ) {
                 BehaveNodeStatus::Success => {
-                    // if the conditional succeeds, we run the second child
-                    let mut second_child = first_child
+                    *first_child.value().status_mut() = Some(BehaveNodeStatus::Success);
+                    // if the conditional succeeds, we run the second child if present.
+                    // also supported a while node with just one child, which will simply repeat
+                    // until that child fails.
+                    if let Some(mut second_child) = first_child.next_sibling() {
+                        match tick_node(
+                            &mut second_child,
+                            time,
+                            commands,
+                            bt_entity,
+                            target_entity,
+                            logging,
+                        ) {
+                            BehaveNodeStatus::Success => {
+                                *second_child.value().status_mut() =
+                                    Some(BehaveNodeStatus::Success);
+                                // if the body succeeds, we loop back to the conditional
+                                *n.value().status_mut() = Some(BehaveNodeStatus::PendingReset);
+                                BehaveNodeStatus::PendingReset
+                            }
+                            other => {
+                                *n.value().status_mut() = Some(other);
+                                other
+                            }
+                        }
+                    } else {
+                        *n.value().status_mut() = Some(BehaveNodeStatus::PendingReset);
+                        BehaveNodeStatus::PendingReset
+                    }
+                }
+                other => {
+                    *first_child.value().status_mut() = Some(other);
+                    *n.value().status_mut() = Some(other);
+                    other
+                }
+            }
+        }
+        IfThen { .. } => {
+            *n.value().status_mut() = Some(BehaveNodeStatus::Running);
+            let mut conditional_child = n
+                .first_child()
+                .expect("IfThen node first child must exist (the 'if condition' child)");
+            // evaluate the condition child
+            match tick_node(
+                &mut conditional_child,
+                time,
+                commands,
+                bt_entity,
+                target_entity,
+                logging,
+            ) {
+                BehaveNodeStatus::Success => {
+                    // the condition child succeeded, so the If node returns the result of evaluating the then child.
+                    *conditional_child.value().status_mut() = Some(BehaveNodeStatus::Success);
+                    let mut then_child = conditional_child
                         .next_sibling()
-                        .expect("While node second child must exist (the body)");
-                    match tick_node(
-                        &mut second_child,
+                        .expect("IfThen node second child must exist (the 'then' child)");
+                    let then_result = tick_node(
+                        &mut then_child,
                         time,
                         commands,
                         bt_entity,
                         target_entity,
                         logging,
-                    ) {
-                        BehaveNodeStatus::Success => {
-                            *second_child.value().status_mut() = Some(BehaveNodeStatus::Success);
-                            // if the body succeeds, we loop back to the conditional
-                            *n.value().status_mut() = Some(BehaveNodeStatus::PendingReset);
-                            BehaveNodeStatus::PendingReset
-                        }
-                        other => {
-                            *n.value().status_mut() = Some(other);
-                            other
-                        }
+                    );
+                    *n.value().status_mut() = Some(then_result);
+                    then_result
+                }
+                BehaveNodeStatus::Failure => {
+                    // the condition child failed, an "else" child is optional. run if present:
+                    *conditional_child.value().status_mut() = Some(BehaveNodeStatus::Failure);
+                    if let Some(mut else_child) = conditional_child
+                        .next_sibling()
+                        .expect("If nodes must have exactly two or three children")
+                        .next_sibling()
+                    {
+                        // if there is an else child, the If node returns the result of evaluating the else child.
+                        let else_result = tick_node(
+                            &mut else_child,
+                            time,
+                            commands,
+                            bt_entity,
+                            target_entity,
+                            logging,
+                        );
+                        *n.value().status_mut() = Some(else_result);
+                        else_result
+                    } else {
+                        // if no else child, and conditional fails, the If node fails.
+                        *n.value().status_mut() = Some(BehaveNodeStatus::Failure);
+                        BehaveNodeStatus::Failure
                     }
                 }
                 other => {
