@@ -1,5 +1,5 @@
 //! A behaviour tree system for bevy.
-#![doc = include_str!("../README.md")]
+#![doc = include_str!("../readme.inc.md")]
 #![deny(missing_docs)]
 use std::borrow::Cow;
 
