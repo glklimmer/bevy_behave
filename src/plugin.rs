@@ -147,17 +147,51 @@ fn walk_tree(
     Ok(())
 }
 
+/// Verifies that nodes have the appropriate number of children etc.
+fn verify_tree(node: &NodeRef<Behave>) -> bool {
+    let children = node.children().collect::<Vec<_>>();
+    let n = node.value();
+    let range = n.permitted_children();
+    if !range.contains(&children.len()) {
+        error!(
+            "⁉️  Node {n} has {} children! Valid range is: {range:?}",
+            children.len(),
+        );
+        false
+    } else {
+        for child in children.iter() {
+            if !verify_tree(child) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
 impl BehaveTree {
     /// Creates a BehaveTree from an `ego_tree::Tree<BehaveNode>`.
     /// Typically this is created using the behave! macro, but can be
     /// constructed using the ego_tree api too.
+    ///
+    /// # Panics
+    /// An invalid tree will cause a panic here.
+    /// Use BehaveTree::verify(&tree) to verify your tree definition first.
     pub fn new(tree: Tree<Behave>) -> Self {
+        if !Self::verify(&tree) {
+            panic!("Invalid tree");
+        }
         // convert to internal BehaveNode tree
         let tree = tree.map(BehaveNode::new);
         Self {
             tree,
             logging: false,
         }
+    }
+
+    /// Checks the tree definition is valid by verifying that each node has the correct
+    /// number of children.
+    pub fn verify(tree: &Tree<Behave>) -> bool {
+        verify_tree(&tree.root())
     }
 
     /// Should verbose logging be enabled? (typically just for debugging).

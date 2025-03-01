@@ -8,14 +8,14 @@
 </p>
 </div>
 
-`bevy_behave` is a behaviour tree plugin for bevy with a sensible API and minimal overheads.
+`bevy_behave` is a behaviour tree plugin for bevy (0.15) with a sensible API and minimal overheads.
 No magic is required for the task components, they are are regular bevy components using triggers to report status.
 
-When an action (aka leaf node, task node) in the behaviour tree runs, it will spawn an entity with
+When an action node (aka leaf node, task node) in the behaviour tree runs, it will spawn an entity with
 the components you specified in the tree definition. The tree then waits for this entity to
 trigger a status report, at which point the entity will be despawned.
 
-You can also take actions without spawning an entity by triggering an Event, which can also be used as a conditional in a control node.
+You can also take actions without spawning an entity by triggering an observed `Event`, which can also be used as a conditional in a control node.
 
 
 
@@ -315,47 +315,140 @@ let tree = behave! {
 
 #### Behave::spawn(...) and Behave::spawn_named(...)
 
-When a `Behave::spawn` (or `Behave::spawn_named`) node runs, a new entity is spawned with the components you provided along with a
-`BehaveCtx` component, which will tell you the target entity the tree is controlling, and a
-mechanism to trigger a status report for success or failure.
+When a `Behave::spawn_named` node runs, a new entity is spawned with the bundle of components you provided along with a
+`BehaveCtx` component, used to get the target entity the tree is controlling, and the mechanism to generate status reports.
 
 Once a result is reported, the entity is despawned.
 
-```
-# use bevy_behave::prelude::*;
-# use bevy::prelude::*;
-# #[derive(Clone, Component, Default)]
-# struct Lander;
-// An example that spawns an entity with a `Lander` component, which would report success once it lands.
-let tree = behave! {
-    Behave::spawn(Lander::default())
-};
-```
-
-The `spawn_named` variant also adds a `Name` component to the spawned entity, and exposes this name in debug logging.
-
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # #[derive(Clone, Component, Default)]
 # struct WingFlapper;
 # #[derive(Clone, Component, Default)]
 # struct ToePointer;
-// An example that spawns a named entity with two components (plus Name):
+// Flap our wings, and succeed (end the task) after 60 seconds.
 let tree = behave! {
-    Behave::spawn_named("Flying Task", (WingFlapper::default(), ToePointer::default()))
+    Behave::spawn_named("Flying Task", 
+        (WingFlapper::default(), BehaveTimeout::from_secs(60.0, true))
+    )
 };
 ```
 
+Prefer the `Behave::spawn_named` variant, because in addition to adding a `Name` component to the spawned entity, it exposes this name in debug logging.
+
+<details>
+
+<summary>An example implementation (click to reveal)</summary>
+
+```rust
+# use bevy_behave::prelude::*;
+# use bevy::prelude::*;
+# #[derive(Component, Clone, Default)]
+# struct Wings;
+# impl Wings { fn flap(&mut self, speed: f32) { } }
+# #[derive(Component, Clone, Default)]
+# struct BirdMarker;
+// An example plugin to provide a `WingFlapper` task component.
+
+fn wing_flapper_task_plugin(app: &mut App) {
+    app.add_systems(FixedUpdate, wing_flap_system);
+}
+
+#[derive(Component, Clone, Default)]
+struct WingFlapper {
+    speed: f32,
+}
+
+fn wing_flap_system(
+    mut q_target: Query<&mut Wings, With<BirdMarker>>,
+    flapper_tasks: Query<(&WingFlapper, &BehaveCtx)>,
+    mut commands: Commands
+) {
+    // for each entity with a WingFlapper component and a BehaveCtx, flap the wings for its target entity
+    for (flapper, ctx) in flapper_tasks.iter() {
+        // the target entity is the one being controlled by the behaviour tree that spawned this task entity
+        let target = ctx.target_entity();
+        let Ok(mut target_wings) = q_target.get_mut(target) else {
+            // Maybe the wings fell off? report task failure.
+            commands.trigger(ctx.failure());
+            continue;
+        };
+        target_wings.flap(flapper.speed);
+    }
+}
+```
+</details>
+
+
 #### Behave::trigger(...)
 
-When a `Behave::trigger` node runs, it will trigger an event, which the user observes and can either respond to with a success or failure immediately, or respond later from another system.
+When a `Behave::trigger` node runs, it will trigger an event, which the user observes and can either respond to with a success or failure immediately, or respond later from another system. You must specify an arbitrary `Clone` type which is passed along as
+the payload of the trigger event, along with the `BehaveCtx`.
+
+Here's how you might use a trigger conditional check to execute a specific task if a height condition is met:
+```
+# use bevy_behave::prelude::*;
+# use bevy::prelude::*;
+# #[derive(Clone)]
+# struct HeightCheck { min_height: f32 }
+# #[derive(Clone, Component, Default)]
+# struct TakeActionWhenHigh;
+let tree = behave! {
+    Behave::IfThen => {
+        Behave::trigger(HeightCheck { min_height: 10.0 }),
+        Behave::spawn_named("High Thing", TakeActionWhenHigh::default()),
+    }
+};
+```
+<details>
+
+<summary>And the implementation (click to reveal)</summary>
+
+
+```rust
+# use bevy_behave::prelude::*;
+# use bevy::prelude::*;
+# #[derive(Clone, Component)]
+# struct Position { x: f32, y: f32 }
+// An example plugin to provide a `HeightCheck` trigger task
+
+fn height_check_task_plugin(app: &mut App) {
+    // add a global observer to answer conditional queries for HeightCheck:
+    app.add_observer(on_height_check);
+}
+
+// Trigger payloads just need to be Clone.
+// They are wrapped in a BehaveTrigger, which is a bevy Event.
+#[derive(Clone)]
+struct HeightCheck {
+    min_height: f32,
+}
+
+// you respond by triggering a success or failure event created by the ctx:
+fn on_height_check(trigger: Trigger<BehaveTrigger<HeightCheck>>, q: Query<&Position>, mut commands: Commands) {
+    let ev = trigger.event();
+    let ctx: &BehaveCtx = ev.ctx();
+    let height_check: &HeightCheck = ev.inner();
+    // lookup the position of the target entity (ie the entity this behaviour tree is controlling)
+    let character_pos = q.get(ctx.target_entity()).expect("Character entity missing?");
+    if character_pos.y >= height_check.min_height {
+        commands.trigger(ctx.success());
+    } else {
+        commands.trigger(ctx.failure());
+    }
+}
+
+```
+</details>
+
+<br>
 
 If you respond with a success or failure from the observer you can treat the event as a conditional test as part of a control flow node. Alternatively, you can use it to trigger a side effect and respond later from another system. Just make sure to copy the `BehaveCtx` so you can generate a success or failure event at your leisure.
 
 
 
-### Cargo Example
+## Cargo Example
 
 Have a look at the [chase example](https://github.com/RJ/bevy_behave/blob/main/examples/chase.rs) to see how these are used.
 Run in release mode to support 100k+ enemies at once:
@@ -364,7 +457,7 @@ cargo run --release --example chase
 ```
 
 
-### Utility components
+## Utility components
 
 For your convenience:
 
@@ -388,70 +481,51 @@ let tree = behave! {
 This will get the `BehaveCtx` from the entity, and trigger a success or failure report for you after the timeout.
 
 
-## How conditionals/non-spawning tasks work
 
-You specify an arbitrary struct which is 
-delivered in a generic trigger which also carries a `BehaveCtx` value.
-The observer can then respond with success or failure.
+## `behave!` macro
 
+The `behave!` macro is more powerful version of the `ego_tree::tree!` macro.
+You can use ego_tree's `tree!` macro to build the tree, but this macro has some additional features
+to make composing behaviours easier:
 
-Here's how you might combine a Sequence with a trigger_req conditional to execute a specific task if a height condition is met:
-```
-# use bevy_behave::prelude::*;
-# use bevy::prelude::*;
-# #[derive(Clone)]
-# struct HeightCheck { min_height: f32 }
-# #[derive(Clone, Component, Default)]
-# struct DoSomethingIfHigh;
-let tree = behave! {
-    Behave::Sequence => {
-        Behave::trigger(HeightCheck { min_height: 10.0 }),
-        // NB much better to use spawn_named here, which adds the Name component for you, because then
-        // the debug logs from bevy_behave will look nicer:
-        Behave::spawn((
-            Name::new("Doing the thing because we are high enough"),
-            DoSomethingIfHigh::default(),
-        )),
-    }
-};
-```
+#### Merging in subtrees:
 
-And the implementation:
+```rust,ignore
 
-```
-# use bevy_behave::prelude::*;
-# use bevy::prelude::*;
-# #[derive(Clone, Component)]
-# struct Position { x: f32, y: f32 }
-// TriggerReq payloads just need to be Clone.
-// They are wrapped in a BehaveTrigger, which is a bevy Event.
-#[derive(Clone)]
-struct HeightCheck {
-    min_height: f32,
-}
+fn get_tree() -> Tree<Behave> {
+    let subtree = behave! {
+        Behave::Sequence => {
+            Behave::trigger(A),
+            Behave::Wait(1.0),
+            Behave::trigger(B),
+        }
+    };
 
-fn setup_plugin(app: &mut App) {
-    // add a global observer to answer conditional queries for HeightCheck:
-    app.add_observer(on_height_check);
-}
-
-// you respond by triggering a success or failure event created by the ctx:
-fn on_height_check(trigger: Trigger<BehaveTrigger<HeightCheck>>, q: Query<&Position>, mut commands: Commands) {
-    let ev = trigger.event();
-    let ctx: &BehaveCtx = ev.ctx();
-    let height_check: &HeightCheck = ev.inner();
-    // lookup the position of the target entity (ie the entity this behaviour tree is controlling)
-    let character_pos = q.get(ctx.target_entity()).expect("Character entity missing?");
-    if character_pos.y >= height_check.min_height {
-        commands.trigger(ctx.success());
-    } else {
-        commands.trigger(ctx.failure());
+    behave! {
+        Behave::Sequence => {
+            Behave::Wait(5.0),
+            @ subtree
+        }
     }
 }
-
 ```
 
-It's also possible to use a trigger_req, and send the `BehaveCtx` to another system and respond later, if you're doing something with existing entities.
+#### Inserting nodes from an iterator:
+
+```rust,ignore
+fn get_tree() -> Tree<Behave> {
+    let children = vec![
+        Behave::trigger(A),
+        Behave::Wait(1.0),
+        Behave::trigger(B),
+    ];
+    behave! {
+        Behave::Sequence => {
+            @[ children ]
+        }
+    }
+}
+```
 
 ## Debug Logging
 
@@ -502,20 +576,13 @@ https://github.com/user-attachments/assets/ef4f0539-0b4d-4d57-9516-a39783de140f
 
 
 
+
+
 ## License
 
 Same as bevy: MIT or Apache-2.0.
 
-### behave! macro
-
-The `behave!` macro is an extension of the `ego_tree::tree!` macro.
-I have upstreamed some of my changes to ego_tree, but I expect to refine it some more, so although
-you can use ego_tree's `tree!` macro to build the tree, this crate's `behave!` macro is more convenient.
-
-#### TODO
-
-* validate tree shape. some nodes need a specific number of children.
-* tests for control flow logic
+<hr>
 
 #### Paths not taken
 

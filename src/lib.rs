@@ -1,7 +1,7 @@
 //! A behaviour tree system for bevy.
 #![doc = include_str!("../readme.inc.md")]
 #![deny(missing_docs)]
-use std::borrow::Cow;
+use std::{borrow::Cow, ops::RangeInclusive};
 
 use bevy::prelude::*;
 use ego_tree::*;
@@ -95,13 +95,13 @@ impl std::fmt::Display for Behave {
         match self {
             Behave::While => write!(f, "While"),
             Behave::Wait(secs) => write!(f, "Wait({secs}s)"),
-            Behave::DynamicEntity { name, .. } => write!(f, "DynamicEntity({name})"),
+            Behave::DynamicEntity { name, .. } => write!(f, "Spawn({name})"),
             Behave::Sequence => write!(f, "Sequence"),
             Behave::Fallback => write!(f, "Fallback"),
             Behave::Invert => write!(f, "Invert"),
             Behave::AlwaysSucceed => write!(f, "AlwaysSucceed"),
             Behave::AlwaysFail => write!(f, "AlwaysFail"),
-            Behave::TriggerReq(t) => write!(f, "TriggerReq({})", t.type_name()),
+            Behave::TriggerReq(t) => write!(f, "Trigger({})", t.type_name()),
             Behave::Forever => write!(f, "Forever"),
             Behave::IfThen => write!(f, "IfThen"),
         }
@@ -135,6 +135,24 @@ impl Behave {
     /// using `BehaveTrigger<T>`. You can access the `value` in an observer using `trigger.event().inner()`.
     pub fn trigger<T: Clone + Send + Sync + 'static>(value: T) -> Self {
         Behave::TriggerReq(DynamicTrigger::new(value))
+    }
+    /// The permitted number of children for this node
+    pub(crate) fn permitted_children(&self) -> RangeInclusive<usize> {
+        match self {
+            Behave::Sequence => 1..=usize::MAX,
+            Behave::Fallback => 1..=usize::MAX,
+            Behave::Forever => 1..=usize::MAX,
+            Behave::While => 1..=2,
+            Behave::IfThen => 2..=3,
+            Behave::Invert => 1..=1,
+            // Task nodes have no children:
+            Behave::Wait(_) => 0..=0,
+            Behave::TriggerReq(_) => 0..=0,
+            Behave::DynamicEntity { .. } => 0..=0,
+            // AlwaysSucceed and AlwaysFail are pseudo task nodes that don't have children:
+            Behave::AlwaysSucceed => 0..=0,
+            Behave::AlwaysFail => 0..=0,
+        }
     }
 }
 
@@ -739,8 +757,6 @@ fn tick_node(
 ///         @ subtree
 ///     }
 /// };
-///
-/// I have upstreamed this to ego_tree, but it's not yet released.
 ///
 /// Also supports appending a list of children from an iterator:
 ///
