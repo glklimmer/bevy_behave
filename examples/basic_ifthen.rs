@@ -69,12 +69,16 @@ fn on_my_then_action(
     ));
 }
 
+// contrived example. this would be better off just being `Behave::AlwaysFail`.
 fn on_my_else_action(trigger: Trigger<BehaveTrigger<MyElseAction>>, mut commands: Commands) {
     info!("MyElseAction!");
     commands.trigger(trigger.event().ctx().failure());
 }
 
 fn init(mut commands: Commands) {
+    // slightly contrived example, becase an IfThen without the third else child will return the
+    // result of the second child, or failure if the first child fails, so the else child isn't
+    // strictly needed here – a failure of the MyIfCondition would break us out of the loop.
     let tree = tree! {
         Behave::While => {
             Behave::IfThen => {
