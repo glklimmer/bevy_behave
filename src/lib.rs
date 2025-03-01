@@ -766,12 +766,11 @@ macro_rules! behave {
         $( behave!(@ $n { $($tail)* }); )?
     }};
 
+    // Base case: no tokens left, with optional trailing comma.
+    (@ $n:ident { $(,)? }) => { };
 
-    // Base case: no tokens left.
-    (@ $n:ident { }) => { };
-
-    // Leaf: last value.
-    (@ $n:ident { $value:expr }) => {{
+    // Leaf: last value, with optional trailing comma.
+    (@ $n:ident { $value:expr $(,)? }) => {{
         $n.append($value);
     }};
 
@@ -781,8 +780,8 @@ macro_rules! behave {
         behave!(@ $n { $($tail)* });
     }};
 
-    // Node: last node with children.
-    (@ $n:ident { $value:expr => $children:tt }) => {{
+    // Node: last node with children, with optional trailing comma.
+    (@ $n:ident { $value:expr => $children:tt $(,)? }) => {{
         let mut node = $n.append($value);
         behave!(@ node $children);
     }};
@@ -795,10 +794,10 @@ macro_rules! behave {
     }};
 
     // Top-level: tree with a root only.
-    ($root:expr) => { $crate::ego_tree::Tree::new($root) };
+    ($root:expr $(,)?) => { $crate::ego_tree::Tree::new($root) };
 
-    // Top-level: tree with a root and children.
-    ($root:expr => $children:tt) => {{
+    // Top-level: tree with a root and children, with optional trailing comma.
+    ($root:expr => $children:tt $(,)?) => {{
         let mut tree = $crate::ego_tree::Tree::new($root);
         {
             let mut node = tree.root_mut();
