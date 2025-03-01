@@ -150,6 +150,7 @@ The following control flow nodes are supported. Control flow logic is part of th
 Use `Behave::Sequence` to run children in sequence, failing if any child fails, succeeding if all children succeed.
 
 This example runs a trigger (and assuming it reports success..), waits 5 secs, then spawns an entity with an imagined `BTaskComponent` to do something.
+
 ```rust
 let tree = behave! {
     Behave::Sequence => {
@@ -310,6 +311,7 @@ When a `Behave::trigger` node runs, it will trigger an event, which the user obs
 the payload of the trigger event, along with the `BehaveCtx`.
 
 Here's how you might use a trigger conditional check to execute a specific task if a height condition is met:
+
 ```rust
 let tree = behave! {
     Behave::IfThen => {
@@ -400,7 +402,10 @@ to make composing behaviours easier:
 ##### Merging in subtrees:
 
 ```rust
-
+#[derive(Clone, Component)]
+struct A;
+#[derive(Clone, Component)]
+struct B;
 fn get_tree() -> Tree<Behave> {
     let subtree = behave! {
         Behave::Sequence => {
@@ -422,6 +427,10 @@ fn get_tree() -> Tree<Behave> {
 ##### Inserting nodes from an iterator:
 
 ```rust
+#[derive(Clone, Component)]
+struct A;
+#[derive(Clone, Component)]
+struct B;
 fn get_tree() -> Tree<Behave> {
     let children = vec![
         Behave::trigger(A),
@@ -441,6 +450,7 @@ fn get_tree() -> Tree<Behave> {
 Call `BehaveTree::with_logging(true)` to enable debug verbose logging:
 
 ```rust
+
 let tree = behave! { Behave::Wait(5.0) }; // etc
 
 commands.spawn((

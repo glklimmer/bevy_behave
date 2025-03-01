@@ -21,7 +21,7 @@ You can also take actions without spawning an entity by triggering an observed `
 
 This tree definition is from the [chase example](https://github.com/RJ/bevy_behave/blob/main/examples/chase.rs):
 
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # fn get_enemy_entity() -> Entity { Entity::PLACEHOLDER }
@@ -69,7 +69,7 @@ let tree = behave! {
 
 <summary><small>You can also compose trees from subtrees</small></summary>
 
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # fn get_enemy_entity() -> Entity { Entity::PLACEHOLDER }
@@ -122,7 +122,10 @@ let tree = behave! {
 
 Once you have your tree definition, you spawn an entity to run the behaviour tree by adding a `BehaveTree` component:
 
-```ignore
+```rust
+# use bevy_behave::prelude::*;
+# use bevy::prelude::*;
+# fn setup_tree(mut commands: Commands, tree: ego_tree::Tree<Behave>, npc_entity: Entity) {
 // Spawn an entity to run the behaviour tree.
 // Make it a child of the npc entity for convenience.
 // The default is to assume the Parent of the tree entity is the Target Entity you're controlling.
@@ -130,17 +133,23 @@ commands.spawn((
     Name::new("Behave tree for NPC"),
     BehaveTree::new(tree)
 )).set_parent(npc_entity);
+# }
 ```
 
 If your behaviour tree is not a child of the target entity you want to control, you can specify the target entity explicitly:
 
-```ignore
+```rust
+# use bevy_behave::prelude::*;
+# use bevy::prelude::*;
+# fn get_entity_to_control() -> Entity { Entity::PLACEHOLDER }
+# fn setup_tree(mut commands: Commands, tree: ego_tree::Tree<Behave>) {
 let target = get_entity_to_control();
 commands.spawn((
     Name::new("Behave tree for NPC"),
     BehaveTree::new(tree),
     BehaveTargetEntity::Entity(target),
 ));
+# }
 ```
 
 
@@ -168,7 +177,8 @@ The following control flow nodes are supported. Control flow logic is part of th
 Use `Behave::Sequence` to run children in sequence, failing if any child fails, succeeding if all children succeed.
 
 This example runs a trigger (and assuming it reports success..), waits 5 secs, then spawns an entity with an imagined `BTaskComponent` to do something.
-```
+
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # #[derive(Component, Default, Clone)]
@@ -189,7 +199,7 @@ let tree = behave! {
 
 Use `Behave::Fallback` to run children in sequence until one succeeds. If they all fail, the Fallback node also fails.
 
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # #[derive(Clone)]
@@ -211,7 +221,7 @@ let tree = behave! {
 
 You can wrap a single node in a `Behave::While` node to repeat it until it fails.
 
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # #[derive(Clone)]
@@ -227,7 +237,7 @@ let tree = behave! {
 
 With two children, the first child is the conditional check. If it succeeds, the second child is run. And then the node repeats.
 
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # #[derive(Clone)]
@@ -248,7 +258,7 @@ let tree = behave! {
 
 The first child is the conditional check, the second is only run if the condition succeeds.
 
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # #[derive(Clone)]
@@ -273,7 +283,7 @@ let tree = behave! {
 
 An optional third child acts as the "else" clause, and is run if the conditional fails.
 
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # #[derive(Clone)]
@@ -305,7 +315,7 @@ Task nodes are leaves of the tree which take some action, typically doing someth
 
 Waits a given duration before Succeeding. The timer is ticked by the tree itself, so no entities are spawned.
 
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 let tree = behave! {
@@ -325,8 +335,6 @@ Once a result is reported, the entity is despawned.
 # use bevy::prelude::*;
 # #[derive(Clone, Component, Default)]
 # struct WingFlapper;
-# #[derive(Clone, Component, Default)]
-# struct ToePointer;
 // Flap our wings, and succeed (end the task) after 60 seconds.
 let tree = behave! {
     Behave::spawn_named("Flying Task", 
@@ -387,7 +395,8 @@ When a `Behave::trigger` node runs, it will trigger an event, which the user obs
 the payload of the trigger event, along with the `BehaveCtx`.
 
 Here's how you might use a trigger conditional check to execute a specific task if a height condition is met:
-```
+
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # #[derive(Clone)]
@@ -465,7 +474,7 @@ For your convenience:
 
 To trigger a status report on a dynamic spawn task after a timeout, use the `BehaveTimeout` helper component:
 
-```
+```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
 # #[derive(Clone, Component, Default)]
@@ -490,8 +499,13 @@ to make composing behaviours easier:
 
 #### Merging in subtrees:
 
-```rust,ignore
-
+```rust
+# use bevy_behave::prelude::*;
+# use bevy::prelude::*;
+#[derive(Clone, Component)]
+struct A;
+#[derive(Clone, Component)]
+struct B;
 fn get_tree() -> Tree<Behave> {
     let subtree = behave! {
         Behave::Sequence => {
@@ -512,7 +526,13 @@ fn get_tree() -> Tree<Behave> {
 
 #### Inserting nodes from an iterator:
 
-```rust,ignore
+```rust
+# use bevy_behave::prelude::*;
+# use bevy::prelude::*;
+#[derive(Clone, Component)]
+struct A;
+#[derive(Clone, Component)]
+struct B;
 fn get_tree() -> Tree<Behave> {
     let children = vec![
         Behave::trigger(A),
@@ -531,13 +551,18 @@ fn get_tree() -> Tree<Behave> {
 
 Call `BehaveTree::with_logging(true)` to enable debug verbose logging:
 
-```rust,ignore
+```rust
+# use bevy_behave::prelude::*;
+# use bevy::prelude::*;
+# fn setup_tree(mut commands: Commands) {
+
 let tree = behave! { Behave::Wait(5.0) }; // etc
 
 commands.spawn((
     Name::new("Behave tree for NPC"),
     BehaveTree::new(tree).with_logging(true),
 ));
+# }
 ```
 
 <img src="https://github.com/RJ/bevy_behave/blob/main/examples/console_logging.png">
@@ -594,7 +619,7 @@ Same as bevy: MIT or Apache-2.0.
 
 I considered doing control flow by taking an `IntoSystem` with a defined In and Out type,
 something like this:
-```ignore
+```rust,ignore
 
 pub type BoxedConditionSystem = Box<dyn System<In = In<BehaveCtx>, Out = bool>>;
 
@@ -614,7 +639,7 @@ impl Behave {
 
 Then you could defined a cond system like, which is quite convenient:
 
-```ignore
+```rust,ignore
 fn check_distance(In(ctx): In<BehaveCtx>, q: Query<&Position, With<Player>>) -> bool {
     let Ok(player_pos) = q.get(ctx.target_entity).unwrap();
     player_pos.x < 100.0
