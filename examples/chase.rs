@@ -125,10 +125,9 @@ fn on_spawn_enemies(
             Behave::Sequence => {
                 // because we're not using spawn_named here, there won't be a pretty name for the node
                 // in any debug log output that bevy_behave generates
-                Behave::spawn((
-                    Name::new("Wait until player is near"),
+                Behave::spawn_named("Wait until player is near",
                     WaitUntilPlayerIsNear{player: *player}
-                )),
+                ),
                 Behave::Sequence => {
                     // to get a nice name in the logs, and to automatically include a Name component in
                     // the bundle, use spawn_named:
