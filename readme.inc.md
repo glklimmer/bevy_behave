@@ -502,9 +502,9 @@ to make composing behaviours easier:
 ```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
-#[derive(Clone, Component)]
+#[derive(Clone)]
 struct A;
-#[derive(Clone, Component)]
+#[derive(Clone)]
 struct B;
 fn get_tree() -> Tree<Behave> {
     let subtree = behave! {
@@ -529,9 +529,9 @@ fn get_tree() -> Tree<Behave> {
 ```rust
 # use bevy_behave::prelude::*;
 # use bevy::prelude::*;
-#[derive(Clone, Component)]
+#[derive(Clone)]
 struct A;
-#[derive(Clone, Component)]
+#[derive(Clone)]
 struct B;
 fn get_tree() -> Tree<Behave> {
     let children = vec![

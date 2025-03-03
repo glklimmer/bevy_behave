@@ -402,9 +402,9 @@ to make composing behaviours easier:
 ##### Merging in subtrees:
 
 ```rust
-#[derive(Clone, Component)]
+#[derive(Clone)]
 struct A;
-#[derive(Clone, Component)]
+#[derive(Clone)]
 struct B;
 fn get_tree() -> Tree<Behave> {
     let subtree = behave! {
@@ -427,9 +427,9 @@ fn get_tree() -> Tree<Behave> {
 ##### Inserting nodes from an iterator:
 
 ```rust
-#[derive(Clone, Component)]
+#[derive(Clone)]
 struct A;
-#[derive(Clone, Component)]
+#[derive(Clone)]
 struct B;
 fn get_tree() -> Tree<Behave> {
     let children = vec![
