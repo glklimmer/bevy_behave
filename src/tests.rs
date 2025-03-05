@@ -65,7 +65,7 @@ fn test_ego_tree_api() {
     let mut tree = ego_tree::Tree::new(Behave::Sequence);
     let mut root = tree.root_mut();
     root.append(Behave::Wait(0.1));
-    for subtree in trees {
+    for subtree in trees.clone() {
         root.append_subtree(subtree);
     }
     assert_tree(
@@ -75,8 +75,17 @@ fn test_ego_tree_api() {
             └── Sequence
                 ├── Wait(1s)
                 └── Wait(2s)",
-        tree,
+        tree.clone(),
     );
+
+    let t2 = behave! {
+        Behave::Sequence => {
+            Behave::Wait(0.1),
+            ... trees,
+        }
+    };
+
+    assert_eq!(tree.to_string(), t2.to_string());
 }
 
 fn assert_tree(s: &str, tree: Tree<Behave>) {

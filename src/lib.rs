@@ -779,6 +779,14 @@ macro_rules! behave {
         $( behave!(@ $n { $($tail)* }); )?
     }};
 
+    // Append a bunch of trees from an iterator
+    (@ $n:ident { ... $children:expr $(, $($tail:tt)*)? }) => {{
+        for child in $children {
+            $n.append_subtree(child);
+        }
+        $( behave!(@ $n { $($tail)* }); )?
+    }};
+
     // Use an “@” marker to indicate that the expression is a subtree, to be merged into the tree.
     (@ $n:ident { @ $subtree:expr $(, $($tail:tt)*)? }) => {{
         $n.append_subtree($subtree);
