@@ -64,11 +64,13 @@ fn test_ego_tree_api() {
     ];
     let mut tree = ego_tree::Tree::new(Behave::Sequence);
     let mut root = tree.root_mut();
+    root.append(Behave::Wait(0.1));
     for subtree in trees {
         root.append_subtree(subtree);
     }
     assert_tree(
         "Sequence
+            ├── Wait(0.1s)
             ├── Wait(1s)
             └── Sequence
                 ├── Wait(1s)
