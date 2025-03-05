@@ -49,6 +49,34 @@ fn test_at_tree() {
     );
 }
 
+#[test]
+fn test_ego_tree_api() {
+    let trees = [
+        behave! {
+            Behave::Wait(1.0),
+        },
+        behave! {
+            Behave::Sequence => {
+                Behave::Wait(1.0),
+                Behave::Wait(2.0),
+            }
+        },
+    ];
+    let mut tree = ego_tree::Tree::new(Behave::Sequence);
+    let mut root = tree.root_mut();
+    for subtree in trees {
+        root.append_subtree(subtree);
+    }
+    assert_tree(
+        "Sequence
+            ├── Wait(1s)
+            └── Sequence
+                ├── Wait(1s)
+                └── Wait(2s)",
+        tree,
+    );
+}
+
 fn assert_tree(s: &str, tree: Tree<Behave>) {
     // strip and tidy any indent spaces in the expected output so we can easily compare
     let leading_spaces = s

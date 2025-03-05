@@ -11,6 +11,9 @@ mod ctx;
 mod dyn_bundle;
 mod plugin;
 
+#[cfg(test)]
+mod tests;
+
 use behave_trigger::*;
 use ctx::*;
 use dyn_bundle::prelude::*;
