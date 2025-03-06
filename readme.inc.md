@@ -3,8 +3,10 @@
     <strong>A behaviour tree plugin for bevy with dynamic spawning.</strong>
 </p>
 <p>
-    <a href="https://crates.io/crates/bevy_behave"><img src="https://img.shields.io/crates/v/bevy_behave.svg?style=flat-square" alt="crates.io"/></a>
-    <a href="https://docs.rs/bevy_behave"><img src="https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square" alt="docs.rs"/></a>
+    <a href="https://crates.io/crates/bevy_behave"><img src="https://img.shields.io/crates/v/bevy_behave.svg" alt="crates.io"/></a>
+    <a href="https://docs.rs/bevy_behave"><img src="https://img.shields.io/badge/docs-latest-blue.svg" alt="docs.rs"/></a>
+    <a href="https://discord.com/channels/691052431525675048/1347180005104422942"><img src="https://img.shields.io/badge/discord-bevy_behave-blue" alt="discord channel"/></a>
+    
 </p>
 </div>
 
@@ -601,6 +603,10 @@ https://github.com/user-attachments/assets/ef4f0539-0b4d-4d57-9516-a39783de140f
 
 
 
+## Chat / Questions?
+
+Say hi in the [bevy_behave discord channel](https://discord.com/channels/691052431525675048/1347180005104422942).
+
 
 
 ## License
@@ -608,6 +614,7 @@ https://github.com/user-attachments/assets/ef4f0539-0b4d-4d57-9516-a39783de140f
 Same as bevy: MIT or Apache-2.0.
 
 <hr>
+
 
 #### Paths not taken
 
