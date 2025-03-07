@@ -403,6 +403,7 @@ to make composing behaviours easier:
 
 ##### Merging in subtrees:
 
+Use `@` to insert a subtree into the current tree:
 ```rust
 #[derive(Clone)]
 struct A;
@@ -426,8 +427,32 @@ fn get_tree() -> Tree<Behave> {
 }
 ```
 
+Use `...` to insert multiple subtrees from an iterator of trees:
+```rust
+#[derive(Clone)]
+struct A;
+#[derive(Clone)]
+struct B;
+fn get_tree() -> Tree<Behave> {
+    let subtrees = [
+        behave! { Behave::Wait(1.0) },
+        behave! { Behave::Wait(2.0) },
+        behave! { Behave::Wait(3.0) },
+    ];
+
+    behave! {
+        Behave::Sequence => {
+            Behave::Wait(5.0),
+            ... subtrees
+        }
+    }
+}
+```
+
+
 ##### Inserting nodes from an iterator:
 
+Use `@[ ]` to insert leaf nodes (`Behave` enum type, not a tree) from an iterator:
 ```rust
 #[derive(Clone)]
 struct A;
