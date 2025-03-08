@@ -58,7 +58,7 @@ impl Plugin for BehavePlugin {
 /// This is required to be on the entity holding the BehaviourTree component.
 /// The actual entity (either specified here or the parent) is provided by calling
 /// `ctx.target_entity()` from the ctx component or trigger event.
-#[derive(Component, Debug, Default)]
+#[derive(Component, Debug, Default, Clone)]
 pub enum BehaveTargetEntity {
     /// Uses the direct parent of the behaviour tree entity as the target entity.
     #[default]
