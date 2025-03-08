@@ -161,7 +161,7 @@ impl Behave {
 
 /// A state wraps the behaviour, and is the node in our internal tree representation of the behaviour tree
 /// One per Behave, with extra state bits.
-// #[derive(Debug)]
+#[derive(Clone)]
 pub(crate) enum BehaveNode {
     Forever {
         status: Option<BehaveNodeStatus>,

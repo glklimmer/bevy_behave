@@ -117,7 +117,7 @@ fn tick_trees(
 /// The main behaviour tree component.
 /// A `bevy_behave` system will query all entities with a `BehaveTree` to tick them.
 /// (unless they have a `BehaveAwaitingTrigger` component)
-#[derive(Component)]
+#[derive(Component, Clone)]
 #[require(BehaveTargetEntity)]
 #[require(Name(||Name::new("BehaveTree")))]
 pub struct BehaveTree {
