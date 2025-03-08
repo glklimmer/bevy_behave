@@ -63,6 +63,8 @@ pub enum BehaveTargetEntity {
     /// Uses the direct parent of the behaviour tree entity as the target entity.
     #[default]
     Parent,
+    /// Finds the root ancestor of the behaviour tree entity and uses that as the target entity.
+    RootAncestor,
     /// Always returns the specified entity as the target entity.
     Entity(Entity),
 }
@@ -83,6 +85,7 @@ fn tick_trees(
         ),
         (Without<BehaveAwaitingTrigger>, Without<BehaveFinished>),
     >,
+    q_parents: Query<&Parent>,
     mut commands: Commands,
     time: Res<Time>,
 ) {
@@ -92,6 +95,7 @@ fn tick_trees(
                 opt_parent.map(|p| p.get()).unwrap_or(Entity::PLACEHOLDER)
             }
             BehaveTargetEntity::Entity(e) => *e,
+            BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
         };
         let tick_result = bt.tick(&time, &mut commands, bt_entity, target_entity);
         match tick_result {

@@ -127,6 +127,8 @@ commands.spawn((
 ));
 ```
 
+Or in case of a deeper hierarchy, you can use `BehaveTargetEntity::RootAncestor` to find the topmost entity.
+
 
 
 ### Control Flow Nodes
