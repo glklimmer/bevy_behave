@@ -90,6 +90,149 @@ fn test_ego_tree_api() {
     assert_eq!(tree.to_string(), t2.to_string());
 }
 
+#[test]
+fn test_root_ancestor_with_nested_trees() {
+    use crate::prelude::*;
+    use bevy::prelude::*;
+
+    let mut app = App::new();
+    app.add_plugins(MinimalPlugins);
+    app.add_plugins(BehavePlugin::default());
+    app.add_plugins(bevy::log::LogPlugin::default());
+    app.add_systems(Startup, |mut commands: Commands| {
+        let tree = behave! {
+            Behave::Sequence => {
+                Behave::Wait(1.0),
+                Behave::spawn_named("Nested tree", BehaveTree::new(behave! { Behave::Wait(2.0) }).with_logging(true)),
+            }
+        };
+        let id = commands.spawn(BehaveTree::new(tree).with_logging(true)).id();
+        info!("spawned tree with id: {}", id);
+    });
+    app.add_observer(
+        |t: Trigger<OnAdd, BehaveFinished>,
+         q: Query<(&BehaveFinished, &BehaveCtx)>,
+         mut exit: EventWriter<AppExit>,
+         mut commands: Commands| {
+            let Ok((finished, ctx)) = q.get(t.entity()) else {
+                // if there was no BehaveCtx on this entity, it was the topmost tree, so exit the test
+                exit.send(AppExit::Success);
+                return;
+            };
+            if finished.0 {
+                commands.trigger(ctx.success());
+            } else {
+                commands.trigger(ctx.failure());
+            }
+        },
+    );
+    app.run();
+}
+
+#[test]
+fn test_frame_delays_async() {
+    run_frame_delays(false, 5);
+}
+
+#[test]
+fn test_frame_delays_sync() {
+    run_frame_delays(true, 1);
+}
+
+/// Increments a u32 frame counter at the start of FixedPreUpdate, before the trees tick.
+/// Checks that the final frame number matches what we expect, once the topmost tree finishes.
+///
+/// Toggle for async/sync ticking.
+fn run_frame_delays(sync: bool, expected_final_frame: u32) {
+    use crate::prelude::*;
+    use bevy::prelude::*;
+
+    #[derive(Resource)]
+    struct ExpectedFinalFrame(u32);
+
+    #[derive(Resource, Default)]
+    struct Frame(u32);
+
+    fn tick_frame(mut frame: ResMut<Frame>) {
+        frame.0 += 1;
+        info!("Frame -> {}", frame.0);
+    }
+
+    // returns success or failure immediately
+    #[derive(Clone)]
+    struct CheckTrigger(bool);
+
+    fn on_check_trigger(
+        t: Trigger<BehaveTrigger<CheckTrigger>>,
+        mut commands: Commands,
+        frame: Res<Frame>,
+    ) {
+        let CheckTrigger(success) = t.inner();
+        info!("CheckTrigger @ {} returning {}", frame.0, success);
+        if *success {
+            commands.trigger(t.ctx().success());
+        } else {
+            commands.trigger(t.ctx().failure());
+        }
+    }
+
+    // run once the topmost tree completes.
+    fn final_tree_finished_checker(
+        _t: Trigger<OnAdd, BehaveFinished>,
+        mut exit: EventWriter<AppExit>,
+        frame: Res<Frame>,
+        expected_final_frame: Res<ExpectedFinalFrame>,
+    ) {
+        info!("Finished @ {}", frame.0);
+        assert_eq!(
+            frame.0, expected_final_frame.0,
+            "Mismatch on final frame number"
+        );
+        exit.send(AppExit::Success);
+    }
+
+    let mut app = App::new();
+    app.init_resource::<Frame>();
+    app.insert_resource(ExpectedFinalFrame(expected_final_frame));
+    app.add_observer(on_check_trigger);
+    app.add_plugins(MinimalPlugins);
+    if sync {
+        app.add_plugins(BehavePlugin::default().with_synchronous());
+    } else {
+        app.add_plugins(BehavePlugin::default());
+    }
+    app.add_plugins(bevy::log::LogPlugin::default());
+    app.add_systems(FixedPreUpdate, tick_frame.before(BehaveSet));
+    app.add_systems(Startup, |mut commands: Commands| {
+        let tree = behave! {
+            Behave::Sequence => {
+                Behave::trigger(CheckTrigger(true)),
+                Behave::spawn_named("Nested tree", BehaveTree::new(behave! { Behave::trigger(CheckTrigger(true)), }).with_logging(true)),
+            }
+        };
+        let id = commands.spawn(BehaveTree::new(tree).with_logging(true))
+            .observe(final_tree_finished_checker)
+            .id();
+        info!("spawned tree with id: {}", id);
+    });
+    app.add_observer(
+        |t: Trigger<OnAdd, BehaveFinished>,
+         q: Query<(&BehaveFinished, &BehaveCtx)>,
+         mut commands: Commands| {
+            let Ok((finished, ctx)) = q.get(t.entity()) else {
+                // if there was no BehaveCtx on this entity, it was the topmost tree, so just return.
+                return;
+            };
+            if finished.0 {
+                commands.trigger(ctx.success());
+            } else {
+                commands.trigger(ctx.failure());
+            }
+        },
+    );
+    app.run();
+}
+
 /// asserts the tree.to_string matches the expected string, accounting for whitespace/indentation
 fn assert_tree(s: &str, tree: Tree<Behave>) {
     // strip and tidy any indent spaces in the expected output so we can easily compare

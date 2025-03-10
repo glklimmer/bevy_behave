@@ -1,6 +1,7 @@
 use crate::{
     prelude::*, tick_node, BehaveNode, BehaveNodeStatus, EntityTaskStatus, TriggerTaskStatus,
 };
+use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
 // use bevy::app::FixedPreUpdate;
 use bevy::ecs::intern::Interned;
@@ -16,6 +17,8 @@ pub struct BehaveSet;
 /// Defaults to configuring the `BehaveSet` to run in `FixedPreUpdate`.
 pub struct BehavePlugin {
     schedule: Interned<dyn ScheduleLabel>,
+    /// if true, use an exclusive mut World system to tick trees, to avoid next-frame delays on triggers
+    synchronous: bool,
 }
 
 impl BehavePlugin {
@@ -23,11 +26,19 @@ impl BehavePlugin {
     pub fn new(schedule: impl ScheduleLabel) -> Self {
         Self {
             schedule: schedule.intern(),
+            synchronous: false,
         }
     }
     /// Return the schedule this plugin will run in.
     pub fn schedule(&self) -> &Interned<dyn ScheduleLabel> {
         &self.schedule
+    }
+
+    /// Enables use of exclusive system to tick the trees
+    /// (to avoid next-frame delays on triggers)
+    pub fn with_synchronous(mut self) -> Self {
+        self.synchronous = true;
+        self
     }
 }
 
@@ -42,12 +53,24 @@ impl Plugin for BehavePlugin {
     fn build(&self, app: &mut App) {
         app.configure_sets(self.schedule, BehaveSet);
         app.register_type::<BehaveTimeout>();
-        app.add_systems(
-            self.schedule,
-            (tick_timeout_components, tick_trees)
-                .chain()
-                .in_set(BehaveSet),
-        );
+
+        app.add_systems(self.schedule, tick_timeout_components.in_set(BehaveSet));
+
+        if self.synchronous {
+            warn!("Using experimental synchronous tree ticking");
+            app.add_systems(
+                self.schedule,
+                tick_trees_sync
+                    .after(tick_timeout_components)
+                    .in_set(BehaveSet),
+            );
+        } else {
+            app.add_systems(
+                self.schedule,
+                tick_trees.after(tick_timeout_components).in_set(BehaveSet),
+            );
+        }
+
         app.add_observer(on_tick_timeout_added);
         // adds a global observer to listen for status report events
         app.add_plugins(crate::ctx::plugin);
@@ -113,7 +136,92 @@ fn tick_trees(
             BehaveNodeStatus::PendingReset => {}
         }
         if bt.logging && tick_result != BehaveNodeStatus::RunningTimer {
-            info!("tick_tree: {bt_entity}\n{}", bt.tree);
+            info!("ticked tree(async): {bt_entity}\n{}", bt.tree);
+        }
+    }
+}
+
+const SANITY_LOOP_LIMIT: usize = 1000;
+
+/// An exclusive mut World system version of tick_trees.
+///
+/// Since the query filter means we're only finding trees that are A) not finished and B) not waiting on a trigger response,
+/// we can just keep on ticking any trees the query finds until it's empty.
+///
+/// This means that if you have a tree with a Behave::trigger(Whatever), which returns immediately,
+/// (eg, the observer reports the status via commands.trigger), it will be re-ticked immediately,
+/// and progress to the next node, without any next-frame delay.
+#[allow(clippy::type_complexity)]
+fn tick_trees_sync(
+    world: &mut World,
+    params: &mut SystemState<(
+        Query<
+            (
+                Entity,
+                &mut BehaveTree,
+                Option<&Parent>,
+                &BehaveTargetEntity,
+            ),
+            (Without<BehaveAwaitingTrigger>, Without<BehaveFinished>),
+        >,
+        Query<&Parent>,
+        Commands,
+        Res<Time>,
+    )>,
+) {
+    let mut sanity_counter = 0;
+    loop {
+        let (mut query, q_parents, mut commands, time) = params.get_mut(world);
+        if query.is_empty() {
+            return;
+        }
+        sanity_counter += 1;
+        // avoid infinite loops in case of logic errors:
+        if sanity_counter > SANITY_LOOP_LIMIT {
+            error!("SANITY_LOOP_LIMIT counter exceeded! aborting tick loop");
+            break;
+        }
+        // info!("Ticking {} trees (sync)", query.iter().count());
+
+        let mut trees_processed = 0;
+        for (bt_entity, mut bt, opt_parent, target_entity) in query.iter_mut() {
+            let target_entity = match target_entity {
+                BehaveTargetEntity::Parent => {
+                    opt_parent.map(|p| p.get()).unwrap_or(Entity::PLACEHOLDER)
+                }
+                BehaveTargetEntity::Entity(e) => *e,
+                BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
+            };
+            let tick_result = bt.tick(&time, &mut commands, bt_entity, target_entity);
+            match tick_result {
+                BehaveNodeStatus::AwaitingTrigger => {
+                    commands.entity(bt_entity).insert(BehaveAwaitingTrigger);
+                }
+                BehaveNodeStatus::Success => {
+                    commands.entity(bt_entity).insert(BehaveFinished(true));
+                }
+                BehaveNodeStatus::Failure => {
+                    commands.entity(bt_entity).insert(BehaveFinished(false));
+                }
+                BehaveNodeStatus::RunningTimer => {}
+                BehaveNodeStatus::Running => {}
+                BehaveNodeStatus::PendingReset => {}
+            }
+            if bt.logging && tick_result != BehaveNodeStatus::RunningTimer {
+                info!("ticked tree (sync): {bt_entity}\n{}", bt.tree);
+            }
+            // trees that are waiting on a timer will always be happy to tick, but they don't need to
+            // be ticked more than once per frame, since the time won't advance until the next frame.
+            // so RunningTimer results don't increment the trees_processed counter.
+            if tick_result != BehaveNodeStatus::RunningTimer {
+                trees_processed += 1;
+            }
+        }
+        params.apply(world);
+        if trees_processed == 0 {
+            // either no trees, or all trees are running timers and don't need to be re-ticked
+            // until next frame.
+            break;
         }
     }
 }
@@ -211,6 +319,9 @@ impl BehaveTree {
         bt_entity: Entity,
         target_entity: Entity,
     ) -> BehaveNodeStatus {
+        let mut tick_state = crate::TickState {
+            logging: self.logging,
+        };
         let mut node = self.tree.root_mut();
         tick_node(
             &mut node,
@@ -218,7 +329,7 @@ impl BehaveTree {
             commands,
             bt_entity,
             target_entity,
-            self.logging,
+            &mut tick_state,
         )
     }
 

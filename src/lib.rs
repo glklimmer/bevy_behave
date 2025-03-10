@@ -49,6 +49,12 @@ enum BehaveNodeStatus {
     PendingReset,
 }
 
+/// state passed down the recursive tree ticking fn
+pub(crate) struct TickState {
+    #[allow(unused)]
+    logging: bool,
+}
+
 /// Inserted on the entity with the BehaveTree when the tree has finished executing.
 /// Containts the final result of the tree.
 #[derive(Component, Reflect, Debug)]
@@ -383,7 +389,7 @@ fn tick_node(
     commands: &mut Commands,
     bt_entity: Entity,
     target_entity: Entity,
-    logging: bool,
+    tick_state: &mut TickState,
 ) -> BehaveNodeStatus {
     use BehaveNode::*;
     // if logging {
@@ -413,7 +419,7 @@ fn tick_node(
                 commands,
                 bt_entity,
                 target_entity,
-                logging,
+                tick_state,
             ) {
                 BehaveNodeStatus::Success => {
                     *first_child.value().status_mut() = Some(BehaveNodeStatus::Success);
@@ -427,7 +433,7 @@ fn tick_node(
                             commands,
                             bt_entity,
                             target_entity,
-                            logging,
+                            tick_state,
                         ) {
                             BehaveNodeStatus::Success => {
                                 *second_child.value().status_mut() =
@@ -465,7 +471,7 @@ fn tick_node(
                 commands,
                 bt_entity,
                 target_entity,
-                logging,
+                tick_state,
             ) {
                 BehaveNodeStatus::Success => {
                     // the condition child succeeded, so the If node returns the result of evaluating the then child.
@@ -479,7 +485,7 @@ fn tick_node(
                         commands,
                         bt_entity,
                         target_entity,
-                        logging,
+                        tick_state,
                     );
                     *n.value().status_mut() = Some(then_result);
                     then_result
@@ -499,7 +505,7 @@ fn tick_node(
                             commands,
                             bt_entity,
                             target_entity,
-                            logging,
+                            tick_state,
                         );
                         *n.value().status_mut() = Some(else_result);
                         else_result
@@ -527,7 +533,7 @@ fn tick_node(
                 commands,
                 bt_entity,
                 target_entity,
-                logging,
+                tick_state,
             ) {
                 // if our child node completes, reset next tick so we can run it again
                 BehaveNodeStatus::Success | BehaveNodeStatus::Failure => {
@@ -579,7 +585,7 @@ fn tick_node(
                 commands,
                 bt_entity,
                 target_entity,
-                logging,
+                tick_state,
             ) {
                 BehaveNodeStatus::Success => BehaveNodeStatus::Failure, // swapped
                 BehaveNodeStatus::Failure => BehaveNodeStatus::Success, // swapped
@@ -684,7 +690,7 @@ fn tick_node(
                     commands,
                     bt_entity,
                     target_entity,
-                    logging,
+                    tick_state,
                 ) {
                     BehaveNodeStatus::Success => {
                         final_status = BehaveNodeStatus::Success;
@@ -723,7 +729,7 @@ fn tick_node(
                     commands,
                     bt_entity,
                     target_entity,
-                    logging,
+                    tick_state,
                 ) {
                     BehaveNodeStatus::Failure => {
                         // a child fails, try the next one, or if no more children, we failed.
