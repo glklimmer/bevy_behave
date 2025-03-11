@@ -2,6 +2,25 @@
 // cargo test -- --nocapture test_at_list
 use crate::prelude::*;
 
+/// Empty sequences are permitted.
+#[test]
+fn test_empty_control_flow() {
+    let tree = behave! {
+        Behave::Sequence => {
+            @[[]]
+        }
+    };
+    assert!(BehaveTree::verify(&tree));
+    assert_tree("Sequence", tree);
+
+    let tree = behave! {
+        Behave::Fallback => {
+        }
+    };
+    assert!(BehaveTree::verify(&tree));
+    assert_tree("Fallback", tree);
+}
+
 /// Tests using the @ [] syntax for including a list of task nodes,
 /// eg Behave::spawn_named or Wait etc – nothing that has children.
 #[test]

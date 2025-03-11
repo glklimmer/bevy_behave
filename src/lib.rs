@@ -148,8 +148,8 @@ impl Behave {
     /// The permitted number of children for this node
     pub(crate) fn permitted_children(&self) -> RangeInclusive<usize> {
         match self {
-            Behave::Sequence => 1..=usize::MAX,
-            Behave::Fallback => 1..=usize::MAX,
+            Behave::Sequence => 0..=usize::MAX,
+            Behave::Fallback => 0..=usize::MAX,
             Behave::Forever => 1..=usize::MAX,
             Behave::While => 1..=2,
             Behave::IfThen => 2..=3,
