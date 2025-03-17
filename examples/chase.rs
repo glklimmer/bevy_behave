@@ -36,16 +36,21 @@ fn chase_plugin(app: &mut App) {
     app.add_observer(onremove_move_towards_player);
     app.add_observer(on_despawn_enemies);
     app.add_observer(on_spawn_enemies);
-    app.add_observer(on_new_behaviour);
+    // Enable logging of spawned behaviours
+    // app.add_observer(on_new_behaviour);
 }
 
 // all dynamic spawn components are inserted at the same time as the BehaveCtx,
 // so if you used the _named fn, or included a Name in the bundle, you can log them like this
 // whenever a new entity for a task node is spawned:
-fn on_new_behaviour(_trigger: Trigger<OnAdd, BehaveCtx>, _q: Query<(Entity, &Name, &BehaveCtx)>) {
-    // if let Ok((entity, name, ctx)) = q.get(trigger.entity()) {
-    // info!("New behaviour spawned {entity} {ctx} = {}", name.as_str());
-    // }
+#[allow(unused)]
+fn on_new_behaviour(
+    trigger: Trigger<OnAdd, BehaveCtx>,
+    q: Query<(Entity, Option<&Name>, &BehaveCtx)>,
+) {
+    if let Ok((entity, name, ctx)) = q.get(trigger.entity()) {
+        info!("New behaviour spawned {entity} {ctx} = {name:?}");
+    }
 }
 
 #[derive(Component)]
