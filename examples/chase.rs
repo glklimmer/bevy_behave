@@ -42,10 +42,10 @@ fn chase_plugin(app: &mut App) {
 // all dynamic spawn components are inserted at the same time as the BehaveCtx,
 // so if you used the _named fn, or included a Name in the bundle, you can log them like this
 // whenever a new entity for a task node is spawned:
-fn on_new_behaviour(trigger: Trigger<OnAdd, BehaveCtx>, q: Query<(Entity, &Name, &BehaveCtx)>) {
-    if let Ok((entity, name, ctx)) = q.get(trigger.entity()) {
-        info!("New behaviour spawned {entity} {ctx} = {}", name.as_str());
-    }
+fn on_new_behaviour(_trigger: Trigger<OnAdd, BehaveCtx>, _q: Query<(Entity, &Name, &BehaveCtx)>) {
+    // if let Ok((entity, name, ctx)) = q.get(trigger.entity()) {
+    // info!("New behaviour spawned {entity} {ctx} = {}", name.as_str());
+    // }
 }
 
 #[derive(Component)]

@@ -112,8 +112,8 @@ mod tests {
 
     fn send_trigger(mut commands: Commands) {
         let dyn_trig = DynamicTrigger::new(MyStruct(123));
-        let ctx =
-            BehaveCtx::new_for_entity(Entity::PLACEHOLDER, get_node_id(), Entity::PLACEHOLDER);
+        let tick_ctx = crate::TickCtx::new(Entity::PLACEHOLDER, Entity::PLACEHOLDER);
+        let ctx = BehaveCtx::new_for_entity(get_node_id(), &tick_ctx);
         commands.dyn_trigger(dyn_trig, ctx);
     }
 

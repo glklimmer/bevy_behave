@@ -92,6 +92,11 @@ pub enum BehaveTargetEntity {
     Entity(Entity),
 }
 
+/// Tracks the entity of the supervisor that is controlling the behaviour tree.
+/// Only used when running under my unreleased HTN crate that complements bevy_behave.
+#[derive(Component, Debug)]
+pub struct BehaveSupervisorEntity(pub Entity);
+
 /// If present on the BehaveTree entity, don't tick tree.
 /// Means tree is sleeping, until a trigger reports a status (which removes the component).
 #[derive(Component)]
@@ -105,6 +110,7 @@ fn tick_trees(
             &mut BehaveTree,
             Option<&Parent>,
             &BehaveTargetEntity,
+            Option<&BehaveSupervisorEntity>,
         ),
         (Without<BehaveAwaitingTrigger>, Without<BehaveFinished>),
     >,
@@ -112,7 +118,7 @@ fn tick_trees(
     mut commands: Commands,
     time: Res<Time>,
 ) {
-    for (bt_entity, mut bt, opt_parent, target_entity) in query.iter_mut() {
+    for (bt_entity, mut bt, opt_parent, target_entity, opt_sup_entity) in query.iter_mut() {
         let target_entity = match target_entity {
             BehaveTargetEntity::Parent => {
                 opt_parent.map(|p| p.get()).unwrap_or(Entity::PLACEHOLDER)
@@ -120,7 +126,9 @@ fn tick_trees(
             BehaveTargetEntity::Entity(e) => *e,
             BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
         };
-        let tick_result = bt.tick(&time, &mut commands, bt_entity, target_entity);
+        let tick_ctx = TickCtx::new(bt_entity, target_entity)
+            .with_optional_sup_entity(opt_sup_entity.map(|c| c.0));
+        let tick_result = bt.tick(&time, &mut commands, &tick_ctx);
         match tick_result {
             BehaveNodeStatus::AwaitingTrigger => {
                 commands.entity(bt_entity).insert(BehaveAwaitingTrigger);
@@ -161,6 +169,7 @@ fn tick_trees_sync(
                 &mut BehaveTree,
                 Option<&Parent>,
                 &BehaveTargetEntity,
+                Option<&BehaveSupervisorEntity>,
             ),
             (Without<BehaveAwaitingTrigger>, Without<BehaveFinished>),
         >,
@@ -184,7 +193,7 @@ fn tick_trees_sync(
         // info!("Ticking {} trees (sync)", query.iter().count());
 
         let mut trees_processed = 0;
-        for (bt_entity, mut bt, opt_parent, target_entity) in query.iter_mut() {
+        for (bt_entity, mut bt, opt_parent, target_entity, opt_sup_entity) in query.iter_mut() {
             let target_entity = match target_entity {
                 BehaveTargetEntity::Parent => {
                     opt_parent.map(|p| p.get()).unwrap_or(Entity::PLACEHOLDER)
@@ -192,7 +201,9 @@ fn tick_trees_sync(
                 BehaveTargetEntity::Entity(e) => *e,
                 BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
             };
-            let tick_result = bt.tick(&time, &mut commands, bt_entity, target_entity);
+            let tick_ctx = TickCtx::new(bt_entity, target_entity)
+                .with_optional_sup_entity(opt_sup_entity.map(|c| c.0));
+            let tick_result = bt.tick(&time, &mut commands, &tick_ctx);
             match tick_result {
                 BehaveNodeStatus::AwaitingTrigger => {
                     commands.entity(bt_entity).insert(BehaveAwaitingTrigger);
@@ -280,6 +291,46 @@ fn verify_tree(node: &NodeRef<Behave>) -> bool {
     }
 }
 
+impl TickCtx {
+    /// Create a new TickCtx with the given behaviour tree entity and target entity.
+    pub(crate) fn new(bt_entity: Entity, target_entity: Entity) -> Self {
+        Self {
+            bt_entity,
+            target_entity,
+            supervisor_entity: None,
+            logging: false,
+        }
+    }
+    /// Set the optional supervisor entity that is controlling the behaviour tree.
+    /// This is only used when running under my unreleased HTN crate that complements bevy_behave.
+    pub(crate) fn with_optional_sup_entity(mut self, sup_entity: Option<Entity>) -> Self {
+        self.supervisor_entity = sup_entity;
+        self
+    }
+
+    #[allow(unused)]
+    pub(crate) fn with_logging(mut self, logging: bool) -> Self {
+        self.logging = logging;
+        self
+    }
+}
+
+/// Context passed down the recursive tree ticking fn
+#[derive(Debug)]
+pub(crate) struct TickCtx {
+    /// Enable for verbose logging (for debugging, too verbose for production)
+    #[allow(unused)]
+    pub(crate) logging: bool,
+    /// The entity of the behaviour tree.
+    pub(crate) bt_entity: Entity,
+    /// The entity of the target character the tree is controlling..
+    pub(crate) target_entity: Entity,
+    /// The entity of the tree supervisor (if present).
+    /// This is not used by bevy_behave unless the tree is running under my complementary
+    /// HTN crate for planning, which is not yet released.
+    pub(crate) supervisor_entity: Option<Entity>,
+}
+
 impl BehaveTree {
     /// Creates a BehaveTree from an `ego_tree::Tree<BehaveNode>`.
     /// Typically this is created using the behave! macro, but can be
@@ -316,21 +367,10 @@ impl BehaveTree {
         &mut self,
         time: &Res<Time>,
         commands: &mut Commands,
-        bt_entity: Entity,
-        target_entity: Entity,
+        tick_ctx: &TickCtx,
     ) -> BehaveNodeStatus {
-        let mut tick_state = crate::TickState {
-            logging: self.logging,
-        };
         let mut node = self.tree.root_mut();
-        tick_node(
-            &mut node,
-            time,
-            commands,
-            bt_entity,
-            target_entity,
-            &mut tick_state,
-        )
+        tick_node(&mut node, time, commands, tick_ctx)
     }
 
     /// Returns Option<Entity> being an entity that was spawned to run this task node.

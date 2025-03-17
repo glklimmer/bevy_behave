@@ -13,6 +13,7 @@ pub struct BehaveCtx {
     bt_entity: Entity,
     task_node: NodeId,
     target_entity: Entity,
+    sup_entity: Option<Entity>,
     ctx_type: CtxType,
 }
 
@@ -35,25 +36,18 @@ enum CtxType {
 }
 
 impl BehaveCtx {
-    pub(crate) fn new_for_trigger(
-        bt_entity: Entity,
-        task_node: NodeId,
-        target_entity: Entity,
-    ) -> Self {
-        Self::new(bt_entity, task_node, target_entity, CtxType::Trigger)
+    pub(crate) fn new_for_trigger(task_node: NodeId, tick_ctx: &TickCtx) -> Self {
+        Self::new(task_node, tick_ctx, CtxType::Trigger)
     }
-    pub(crate) fn new_for_entity(
-        bt_entity: Entity,
-        task_node: NodeId,
-        target_entity: Entity,
-    ) -> Self {
-        Self::new(bt_entity, task_node, target_entity, CtxType::Entity)
+    pub(crate) fn new_for_entity(task_node: NodeId, tick_ctx: &TickCtx) -> Self {
+        Self::new(task_node, tick_ctx, CtxType::Entity)
     }
-    fn new(bt_entity: Entity, task_node: NodeId, target_entity: Entity, ctx_type: CtxType) -> Self {
+    fn new(task_node: NodeId, tick_ctx: &TickCtx, ctx_type: CtxType) -> Self {
         Self {
-            bt_entity,
             task_node,
-            target_entity,
+            bt_entity: tick_ctx.bt_entity,
+            target_entity: tick_ctx.target_entity,
+            sup_entity: tick_ctx.supervisor_entity,
             ctx_type,
         }
     }
@@ -83,6 +77,11 @@ impl BehaveCtx {
     /// Not typically needed in user code.
     pub fn behave_entity(&self) -> Entity {
         self.bt_entity
+    }
+    /// Returns the entity of the supervisor that is controlling the behaviour tree.
+    /// Only used when running with my unreleased HTN crate that complements bevy_behave.
+    pub fn supervisor_entity(&self) -> Option<Entity> {
+        self.sup_entity
     }
     /// Returns the node id of the task that this context is for.
     /// Used internally by the tree to report status.
