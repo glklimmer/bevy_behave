@@ -763,6 +763,7 @@ macro_rules! behave {
     ($root:expr => $children:tt $(,)?) => {{
         let mut tree = $crate::ego_tree::Tree::new($root);
         {
+            // unused in empty sequence or fallback nodes
             #[allow(unused)]
             let mut node = tree.root_mut();
             behave!(@ node $children);
