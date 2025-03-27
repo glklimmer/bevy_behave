@@ -126,7 +126,7 @@ fn tick_trees(
             BehaveTargetEntity::Entity(e) => *e,
             BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
         };
-        let tick_ctx = TickCtx::new(bt_entity, target_entity)
+        let tick_ctx = TickCtx::new(bt_entity, target_entity, time.elapsed_secs())
             .with_optional_sup_entity(opt_sup_entity.map(|c| c.0));
         let tick_result = bt.tick(&time, &mut commands, &tick_ctx);
         match tick_result {
@@ -201,7 +201,7 @@ fn tick_trees_sync(
                 BehaveTargetEntity::Entity(e) => *e,
                 BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
             };
-            let tick_ctx = TickCtx::new(bt_entity, target_entity)
+            let tick_ctx = TickCtx::new(bt_entity, target_entity, time.elapsed_secs())
                 .with_optional_sup_entity(opt_sup_entity.map(|c| c.0));
             let tick_result = bt.tick(&time, &mut commands, &tick_ctx);
             match tick_result {
@@ -293,11 +293,12 @@ fn verify_tree(node: &NodeRef<Behave>) -> bool {
 
 impl TickCtx {
     /// Create a new TickCtx with the given behaviour tree entity and target entity.
-    pub(crate) fn new(bt_entity: Entity, target_entity: Entity) -> Self {
+    pub(crate) fn new(bt_entity: Entity, target_entity: Entity, elapsed_secs: f32) -> Self {
         Self {
             bt_entity,
             target_entity,
             supervisor_entity: None,
+            elapsed_secs,
             logging: false,
         }
     }
@@ -329,6 +330,8 @@ pub(crate) struct TickCtx {
     /// This is not used by bevy_behave unless the tree is running under my complementary
     /// HTN crate for planning, which is not yet released.
     pub(crate) supervisor_entity: Option<Entity>,
+    /// Bevy's Time res elapsed_secs
+    pub(crate) elapsed_secs: f32,
 }
 
 impl BehaveTree {

@@ -128,14 +128,12 @@ fn on_spawn_enemies(
     let tree = tree! {
         Behave::Forever => {
             Behave::Sequence => {
-                // because we're not using spawn_named here, there won't be a pretty name for the node
-                // in any debug log output that bevy_behave generates
+                // because we're using spawn_named here, there will be a pretty name for the node
+                // in any debug log output that bevy_behave generates.
                 Behave::spawn_named("Wait until player is near",
                     WaitUntilPlayerIsNear{player: *player}
                 ),
                 Behave::Sequence => {
-                    // to get a nice name in the logs, and to automatically include a Name component in
-                    // the bundle, use spawn_named:
                     Behave::spawn_named("Move towards player while in range",
                         MoveTowardsPlayer{player: *player, speed: ENEMY_SPEED}
                     ),

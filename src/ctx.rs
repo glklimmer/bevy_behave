@@ -15,6 +15,7 @@ pub struct BehaveCtx {
     target_entity: Entity,
     sup_entity: Option<Entity>,
     ctx_type: CtxType,
+    elapsed_secs: f32,
 }
 
 impl std::fmt::Display for BehaveCtx {
@@ -48,8 +49,15 @@ impl BehaveCtx {
             bt_entity: tick_ctx.bt_entity,
             target_entity: tick_ctx.target_entity,
             sup_entity: tick_ctx.supervisor_entity,
+            elapsed_secs: tick_ctx.elapsed_secs,
             ctx_type,
         }
+    }
+    /// The `Time::elapsed_secs()`` when this behaviour was spawned/triggered.
+    /// Useful to calculate how long the behaviour has been running:
+    /// `time.elapsed_secs() - ctx.elapsed_secs_epoch()`
+    pub fn elapsed_secs_epoch(&self) -> f32 {
+        self.elapsed_secs
     }
     /// Was this context created for a trigger_req node?
     pub fn is_for_trigger(&self) -> bool {
