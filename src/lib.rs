@@ -582,7 +582,7 @@ fn tick_node(
             name: _,
         } => {
             let mut e = commands.spawn(());
-            e.set_parent(tick_ctx.bt_entity);
+            e.insert(ChildOf(tick_ctx.bt_entity));
             let ctx = BehaveCtx::new_for_entity(task_node, tick_ctx);
             // NB: if the component in the dyn bundle has an OnAdd which reports success or failure
             //     immediately, the entity will be despawned instantly, so you can't do something

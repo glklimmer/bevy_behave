@@ -147,6 +147,6 @@ fn on_behave_status_report(
     // despawn the entity used for this task now that it is complete.
     // if this was a TriggerReq task, there won't be a task entity.
     if let Some(task_entity) = task_entity {
-        commands.entity(task_entity).try_despawn_recursive();
+        commands.entity(task_entity).try_despawn();
     }
 }
