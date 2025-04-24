@@ -407,7 +407,7 @@ fn on_new_behaviour(
     trigger: Trigger<OnAdd, BehaveCtx>,
     q: Query<(Entity, Option<&Name>, &BehaveCtx)>,
 ) {
-    if let Ok((entity, name, ctx)) = q.get(trigger.entity()) {
+    if let Ok((entity, name, ctx)) = q.get(trigger.target()) {
         info!("New behaviour spawned {entity} {ctx} = {name:?}");
     }
 }

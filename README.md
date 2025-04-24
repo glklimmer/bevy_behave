@@ -12,15 +12,14 @@
 </p>
 </div>
 
-`bevy_behave` is a behaviour tree plugin for bevy (0.15) with a sensible API and minimal overheads.
+`bevy_behave` is a behaviour tree plugin for bevy with a sensible API and minimal overheads.
 No magic is required for the task components, they are are regular bevy components using triggers to report status.
 
-When an action node (aka leaf node, task node) in the behaviour tree runs, it will spawn an entity with
+When an action node (aka leaf node or task node) in the behaviour tree runs, it will spawn an entity with
 the components you specified in the tree definition. The tree then waits for this entity to
 trigger a status report, at which point the entity will be despawned.
 
 You can also take actions without spawning an entity by triggering an observed `Event`, which can also be used as a conditional in a control node.
-
 
 
 This tree definition is from the [chase example](https://github.com/RJ/bevy_behave/blob/main/examples/chase.rs):
@@ -523,12 +522,22 @@ No attempts at optimising the logic yet, but I can add 5k ships running behaviou
 https://github.com/user-attachments/assets/ef4f0539-0b4d-4d57-9516-a39783de140f
 
 
+### Bevy Version Compatibility
+
+| bevy_behave | bevy |
+| ----------- | ---- |
+| 0.3         | 0.16 |
+| 0.2.2       | 0.15 |
 
 
 ### Chat / Questions?
 
 Say hi in the [bevy_behave discord channel](https://discord.com/channels/691052431525675048/1347180005104422942).
 
+### Further Reading
+
+* Cool interactive blog post using bevy_behave: https://www.hankruiger.com/posts/bevy-behave/
+* [Wikipedia on Behavior Trees](https://en.wikipedia.org/wiki/Behavior_tree_(artificial_intelligence,_robotics_and_control))
 
 
 ### License
