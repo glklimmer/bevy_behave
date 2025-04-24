@@ -36,21 +36,8 @@ fn chase_plugin(app: &mut App) {
     app.add_observer(onremove_move_towards_player);
     app.add_observer(on_despawn_enemies);
     app.add_observer(on_spawn_enemies);
-    // Enable logging of spawned behaviours
-    // app.add_observer(on_new_behaviour);
-}
-
-// all dynamic spawn components are inserted at the same time as the BehaveCtx,
-// so if you used the _named fn, or included a Name in the bundle, you can log them like this
-// whenever a new entity for a task node is spawned:
-#[allow(unused)]
-fn on_new_behaviour(
-    trigger: Trigger<OnAdd, BehaveCtx>,
-    q: Query<(Entity, Option<&Name>, &BehaveCtx)>,
-) {
-    if let Ok((entity, name, ctx)) = q.get(trigger.target()) {
-        info!("New behaviour spawned {entity} {ctx} = {name:?}");
-    }
+    // example of some extra debug logging (uncomment in the example_debug_plugin function)
+    app.add_plugins(example_debug_plugin);
 }
 
 #[derive(Component)]
@@ -400,4 +387,52 @@ fn add_help_text(app: &mut App) {
                 },
             ));
         });
+}
+
+// -- extra debug logging example
+
+#[allow(unused)]
+fn example_debug_plugin(app: &mut App) {
+    // Enable logging of spawned behaviours
+    // app.add_observer(on_new_behaviour);
+    // Enable logging of every task completion
+    // app.add_observer(on_status_report);
+}
+
+// all dynamic spawn components are inserted at the same time as the BehaveCtx,
+// so if you used the _named fn, or included a Name in the bundle, you can log them like this
+// whenever a new entity for a task node is spawned:
+#[allow(unused)]
+fn on_new_behaviour(
+    trigger: Trigger<OnAdd, BehaveCtx>,
+    q: Query<(Entity, Option<&Name>, &BehaveCtx)>,
+) {
+    if let Ok((entity, name, ctx)) = q.get(trigger.entity()) {
+        info!("New behaviour spawned {entity} {ctx} = {name:?}");
+    }
+}
+
+// If you want to log every time a task triggers a status report, you can do this.
+// the BehaveStatusReport is what is triggered by your code that calls:
+// commands.trigger(ctx.success()) or commands.trigger(ctx.failure());
+//
+// Right after this trigger is processed, the dynamic entity will be despawned.
+// In the case of a trigger node, the task_entity will be None, since trigger nodes don't spawn.
+#[allow(unused)]
+fn on_status_report(trigger: Trigger<BehaveStatusReport>, q: Query<&Name>) {
+    // task_entity() from the Ctx is the dynamic entity spawned to run the task, which will be
+    // despawning next frame. You still have access to read all the components at this point.
+    let Some(task_entity) = trigger.ctx().task_entity() else {
+        return;
+    };
+    // read components from the dynamic entity.
+    // success or failure is the enum value of the BehaveStatusReport.
+    if let Ok(name) = q.get(task_entity) {
+        info!(
+            "Behaviour finished with name {task_entity} {name:?} {:?}",
+            trigger.event()
+        );
+    } else {
+        warn!("No name for task entity {task_entity}");
+    }
 }

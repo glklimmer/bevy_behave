@@ -10,11 +10,20 @@ pub(crate) fn plugin(app: &mut App) {
 /// back to the tree, and to look up the target entity etc.
 #[derive(Component, Debug, Copy, Clone)]
 pub struct BehaveCtx {
+    /// the entity holding the behaviour tree
     bt_entity: Entity,
+    /// the entity that was spawned to respond to this node in the tree.
+    /// only present for DynamicEntity nodes - trigger nodes don't spawn entities.
+    task_entity: Option<Entity>,
+    /// the node id of the task that this context is for.
     task_node: NodeId,
+    /// the target entity this behaviour tree is controlling. (ie the character entity)
     target_entity: Entity,
+    /// (optional) entity supervising this tree, sometimes needed by external libraries.
     sup_entity: Option<Entity>,
+    /// the type of context: trigger or entity.
     ctx_type: CtxType,
+    /// the time when the behaviour was spawned/triggered
     elapsed_secs: f32,
 }
 
@@ -38,14 +47,24 @@ enum CtxType {
 
 impl BehaveCtx {
     pub(crate) fn new_for_trigger(task_node: NodeId, tick_ctx: &TickCtx) -> Self {
-        Self::new(task_node, tick_ctx, CtxType::Trigger)
+        Self::new(task_node, tick_ctx, CtxType::Trigger, None)
     }
-    pub(crate) fn new_for_entity(task_node: NodeId, tick_ctx: &TickCtx) -> Self {
-        Self::new(task_node, tick_ctx, CtxType::Entity)
+    pub(crate) fn new_for_entity(
+        task_node: NodeId,
+        tick_ctx: &TickCtx,
+        task_entity: Entity,
+    ) -> Self {
+        Self::new(task_node, tick_ctx, CtxType::Entity, Some(task_entity))
     }
-    fn new(task_node: NodeId, tick_ctx: &TickCtx, ctx_type: CtxType) -> Self {
+    fn new(
+        task_node: NodeId,
+        tick_ctx: &TickCtx,
+        ctx_type: CtxType,
+        task_entity: Option<Entity>,
+    ) -> Self {
         Self {
             task_node,
+            task_entity,
             bt_entity: tick_ctx.bt_entity,
             target_entity: tick_ctx.target_entity,
             sup_entity: tick_ctx.supervisor_entity,
@@ -85,6 +104,11 @@ impl BehaveCtx {
     /// Not typically needed in user code.
     pub fn behave_entity(&self) -> Entity {
         self.bt_entity
+    }
+    /// Returns the entity spawned as part of a DynamicEntity node to run the task.
+    /// Will be None for Trigger nodes or any other node that isn't DynamicEntity.
+    pub fn task_entity(&self) -> Option<Entity> {
+        self.task_entity
     }
     /// Returns the entity of the supervisor that is controlling the behaviour tree.
     /// Only used when running with my unreleased HTN crate that complements bevy_behave.
@@ -131,11 +155,6 @@ fn on_behave_status_report(
         debug!("Failed to get bt entity during status report {:?}", trigger);
         return;
     };
-    // info!(
-    //     "📋 Got status report, removing BehaveAwaitingTrigger {:?} node status = {:?}",
-    //     trigger.event(),
-    //     bt.get_node_result(ctx.task_node())
-    // );
     // remove the waiting trigger component, so the tree will be ticked next time.
     commands
         .entity(ctx.bt_entity)
