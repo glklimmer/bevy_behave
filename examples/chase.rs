@@ -38,6 +38,8 @@ fn chase_plugin(app: &mut App) {
     app.add_observer(on_spawn_enemies);
     // Enable logging of spawned behaviours
     // app.add_observer(on_new_behaviour);
+    // Enable logging of every task completion
+    // app.add_observer(on_behaviour_finished);
 }
 
 // all dynamic spawn components are inserted at the same time as the BehaveCtx,
@@ -50,6 +52,30 @@ fn on_new_behaviour(
 ) {
     if let Ok((entity, name, ctx)) = q.get(trigger.entity()) {
         info!("New behaviour spawned {entity} {ctx} = {name:?}");
+    }
+}
+
+// If you want to log every time a task completes, you can do this.
+// the BehaveStatusReport is what is triggered by your code that calls:
+// commands.trigger(ctx.success()) or commands.trigger(ctx.failure());
+//
+// Right after this trigger is processed, the dynamic entity will be despawned.
+#[allow(unused)]
+fn on_behaviour_finished(trigger: Trigger<BehaveStatusReport>, q: Query<&Name>) {
+    // task_entity() from the Ctx is the dynamic entity spawned to run the task, which will be
+    // despawning next frame. You still have access to read all the components at this point.
+    let Some(task_entity) = trigger.ctx().task_entity() else {
+        return;
+    };
+    // read components from the dynamic entity.
+    // success or failure is the enum value of the BehaveStatusReport.
+    if let Ok(name) = q.get(task_entity) {
+        info!(
+            "Behaviour finished with name {task_entity} {name:?} {:?}",
+            trigger.event()
+        );
+    } else {
+        warn!("No name for task entity {task_entity}");
     }
 }
 

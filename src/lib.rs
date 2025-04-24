@@ -422,6 +422,7 @@ fn tick_node(
                                 BehaveNodeStatus::PendingReset
                             }
                             other => {
+                                // failing second node doesn't matter, we dont care. always run again.
                                 *n.value().status_mut() = Some(other);
                                 other
                             }
@@ -583,7 +584,7 @@ fn tick_node(
         } => {
             let mut e = commands.spawn(());
             e.set_parent(tick_ctx.bt_entity);
-            let ctx = BehaveCtx::new_for_entity(task_node, tick_ctx);
+            let ctx = BehaveCtx::new_for_entity(task_node, tick_ctx, e.id());
             // NB: if the component in the dyn bundle has an OnAdd which reports success or failure
             //     immediately, the entity will be despawned instantly, so you can't do something
             //     like .set_parent on it after doing the insertion (we set_parent above).
