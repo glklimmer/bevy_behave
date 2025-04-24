@@ -108,20 +108,20 @@ fn tick_trees(
         (
             Entity,
             &mut BehaveTree,
-            Option<&Parent>,
+            Option<&ChildOf>,
             &BehaveTargetEntity,
             Option<&BehaveSupervisorEntity>,
         ),
         (Without<BehaveAwaitingTrigger>, Without<BehaveFinished>),
     >,
-    q_parents: Query<&Parent>,
+    q_parents: Query<&ChildOf>,
     mut commands: Commands,
     time: Res<Time>,
 ) {
     for (bt_entity, mut bt, opt_parent, target_entity, opt_sup_entity) in query.iter_mut() {
         let target_entity = match target_entity {
             BehaveTargetEntity::Parent => {
-                opt_parent.map(|p| p.get()).unwrap_or(Entity::PLACEHOLDER)
+                opt_parent.map(|p| p.parent()).unwrap_or(Entity::PLACEHOLDER)
             }
             BehaveTargetEntity::Entity(e) => *e,
             BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
@@ -167,13 +167,13 @@ fn tick_trees_sync(
             (
                 Entity,
                 &mut BehaveTree,
-                Option<&Parent>,
+                Option<&ChildOf>,
                 &BehaveTargetEntity,
                 Option<&BehaveSupervisorEntity>,
             ),
             (Without<BehaveAwaitingTrigger>, Without<BehaveFinished>),
         >,
-        Query<&Parent>,
+        Query<&ChildOf>,
         Commands,
         Res<Time>,
     )>,
@@ -196,7 +196,7 @@ fn tick_trees_sync(
         for (bt_entity, mut bt, opt_parent, target_entity, opt_sup_entity) in query.iter_mut() {
             let target_entity = match target_entity {
                 BehaveTargetEntity::Parent => {
-                    opt_parent.map(|p| p.get()).unwrap_or(Entity::PLACEHOLDER)
+                    opt_parent.map(|p| p.parent()).unwrap_or(Entity::PLACEHOLDER)
                 }
                 BehaveTargetEntity::Entity(e) => *e,
                 BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
@@ -242,7 +242,7 @@ fn tick_trees_sync(
 /// (unless they have a `BehaveAwaitingTrigger` component)
 #[derive(Component, Clone)]
 #[require(BehaveTargetEntity)]
-#[require(Name(||Name::new("BehaveTree")))]
+#[require(Name::new("BehaveTree"))]
 pub struct BehaveTree {
     tree: Tree<BehaveNode>,
     logging: bool,
@@ -448,7 +448,7 @@ fn on_tick_timeout_added(
     mut q: Query<&mut BehaveTimeout>,
     time: Res<Time>,
 ) {
-    let mut timeout = q.get_mut(t.entity()).unwrap();
+    let mut timeout = q.get_mut(t.target()).unwrap();
     timeout.start_time = time.elapsed_secs();
 }
 

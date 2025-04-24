@@ -112,8 +112,9 @@ Once you have your tree definition, you spawn an entity to run the behaviour tre
 // The default is to assume the Parent of the tree entity is the Target Entity you're controlling.
 commands.spawn((
     Name::new("Behave tree for NPC"),
-    BehaveTree::new(tree)
-)).set_parent(npc_entity);
+    BehaveTree::new(tree),
+    ChildOf(npc_entity),
+));
 ```
 
 If your behaviour tree is not a child of the target entity you want to control, you can specify the target entity explicitly:

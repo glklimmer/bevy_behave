@@ -5,7 +5,7 @@
 //! This is a based on https://crates.io/crates/bevy_dynamic_bundle
 //! updated for latest bevy, and with some bevy_behave specific changes.
 use bevy::ecs::system::{EntityCommand, EntityCommands};
-use bevy::prelude::{Bundle, Commands, Entity, World};
+use bevy::prelude::{Bundle, Commands, EntityWorldMut};
 
 use dyn_clone::DynClone;
 
@@ -19,39 +19,43 @@ pub mod prelude {
 /// we want to insert the BehaveCtx at the same time as the dynamic bundle, because we want to be
 /// able to write Trigger<OnAdd, BehaveCtx> and see the bundle components on the entity already.
 fn insert<T: Bundle + Clone>(bundle: T) -> impl DynEntityCommand {
-    move |entity: Entity, world: &mut World, ctx: Option<BehaveCtx>| {
-        if let Ok(mut entity) = world.get_entity_mut(entity) {
-            if let Some(ctx) = ctx {
-                entity.insert((ctx, bundle));
+    move |mut entity_world: EntityWorldMut, ctx: Option<BehaveCtx>| {
+        let entity = entity_world.id();
+        
+        entity_world.world_scope(|world| {
+            if let Ok(mut entity) = world.get_entity_mut(entity) {
+                if let Some(ctx) = ctx {
+                    entity.insert((ctx, bundle));
+                } else {
+                    entity.insert(bundle);
+                }
             } else {
-                entity.insert(bundle);
+                panic!(
+                    "error[B0003]: Could not insert a bundle (of type `{}`) for entity {:?} because it doesn't exist in this World.",
+                    std::any::type_name::<T>(),
+                    entity
+                );
             }
-        } else {
-            panic!(
-                "error[B0003]: Could not insert a bundle (of type `{}`) for entity {:?} because it doesn't exist in this World.",
-                std::any::type_name::<T>(),
-                entity
-            );
-        }
+        });
     }
 }
 
 trait DynEntityCommand<Marker = ()>: DynClone + Send + Sync + 'static {
-    fn apply_dyn_bundle(self: Box<Self>, id: Entity, world: &mut World, ctx: Option<BehaveCtx>);
+    fn apply_dyn_bundle(self: Box<Self>, entity: EntityWorldMut, ctx: Option<BehaveCtx>);
 }
 
 impl<F> DynEntityCommand for F
 where
-    F: FnOnce(Entity, &mut World, Option<BehaveCtx>) + DynClone + Send + Sync + 'static,
+    F: FnOnce(EntityWorldMut, Option<BehaveCtx>) + DynClone + Send + Sync + 'static,
 {
-    fn apply_dyn_bundle(self: Box<Self>, id: Entity, world: &mut World, ctx: Option<BehaveCtx>) {
-        self(id, world, ctx);
+    fn apply_dyn_bundle(self: Box<Self>, entity: EntityWorldMut, ctx: Option<BehaveCtx>) {
+        self(entity, ctx);
     }
 }
 
 impl EntityCommand for DynamicSpawnWrapper {
-    fn apply(self, id: Entity, world: &mut World) {
-        self.bundel_fn.apply_dyn_bundle(id, world, self.ctx);
+    fn apply(self, entity: EntityWorldMut) {
+        self.bundel_fn.apply_dyn_bundle(entity, self.ctx);
     }
 }
 
@@ -151,7 +155,7 @@ mod tests {
         }
 
         fn query(components: Query<&ComponentA>) {
-            assert_eq!(2, components.get_single().unwrap().0);
+            assert_eq!(2, components.single().unwrap().0);
         }
     }
 
@@ -175,12 +179,12 @@ mod tests {
         }
 
         fn spawn(mut commands: Commands, spawner_q: Query<&Spawner>) {
-            let spawner = spawner_q.get_single().unwrap();
+            let spawner = spawner_q.single().unwrap();
             commands.dyn_spawn(spawner.0.clone(), None);
         }
 
         fn query(components: Query<&ComponentA>) {
-            assert_eq!(2, components.get_single().unwrap().0);
+            assert_eq!(2, components.single().unwrap().0);
         }
     }
 }

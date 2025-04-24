@@ -133,9 +133,9 @@ fn test_root_ancestor_with_nested_trees() {
          q: Query<(&BehaveFinished, &BehaveCtx)>,
          mut exit: EventWriter<AppExit>,
          mut commands: Commands| {
-            let Ok((finished, ctx)) = q.get(t.entity()) else {
+            let Ok((finished, ctx)) = q.get(t.target()) else {
                 // if there was no BehaveCtx on this entity, it was the topmost tree, so exit the test
-                exit.send(AppExit::Success);
+                exit.write(AppExit::Success);
                 return;
             };
             if finished.0 {
@@ -207,7 +207,7 @@ fn run_frame_delays(sync: bool, expected_final_frame: u32) {
             frame.0, expected_final_frame.0,
             "Mismatch on final frame number"
         );
-        exit.send(AppExit::Success);
+        exit.write(AppExit::Success);
     }
 
     let mut app = App::new();
@@ -238,7 +238,7 @@ fn run_frame_delays(sync: bool, expected_final_frame: u32) {
         |t: Trigger<OnAdd, BehaveFinished>,
          q: Query<(&BehaveFinished, &BehaveCtx)>,
          mut commands: Commands| {
-            let Ok((finished, ctx)) = q.get(t.entity()) else {
+            let Ok((finished, ctx)) = q.get(t.target()) else {
                 // if there was no BehaveCtx on this entity, it was the topmost tree, so just return.
                 return;
             };

@@ -42,13 +42,13 @@ fn chase_plugin(app: &mut App) {
 
 #[derive(Component)]
 #[require(Transform)]
-#[require(Appearance(||Appearance{colour: (css::GREEN * 5.0).into(), idx: 0, show_vision: false}))]
+#[require(Appearance{ colour: (css::GREEN * 5.0).into(), idx: 0, show_vision: false })]
 struct Player;
 
 #[derive(Component)]
 #[require(Transform)]
-#[require(VisionRadius(||VisionRadius(ENEMY_VISION_RADIUS)))]
-#[require(Appearance(Appearance::new))]
+#[require(VisionRadius(ENEMY_VISION_RADIUS))]
+#[require(Appearance::new())]
 struct Enemy;
 
 #[derive(Component)]
@@ -97,7 +97,7 @@ fn on_despawn_enemies(
     let num = trigger.event().0;
     let mut i = 0;
     for e in q.iter() {
-        commands.entity(e).despawn_recursive();
+        commands.entity(e).despawn();
         i += 1;
         if i >= num {
             break;
@@ -228,7 +228,7 @@ fn onadd_move_towards_player(
     q: Query<&BehaveCtx, With<MoveTowardsPlayer>>,
     mut q_target: Query<&mut Appearance, With<Enemy>>,
 ) {
-    let ctx = q.get(trigger.entity()).unwrap();
+    let ctx = q.get(trigger.target()).unwrap();
     let mut appearance = q_target.get_mut(ctx.target_entity()).unwrap();
     appearance.show_vision = true;
 }
@@ -238,7 +238,7 @@ fn onremove_move_towards_player(
     q: Query<&BehaveCtx, With<MoveTowardsPlayer>>,
     mut q_target: Query<&mut Appearance, With<Enemy>>,
 ) {
-    let ctx = q.get(trigger.entity()).unwrap();
+    let ctx = q.get(trigger.target()).unwrap();
     let mut appearance = q_target.get_mut(ctx.target_entity()).unwrap();
     appearance.show_vision = false;
 }
@@ -293,7 +293,7 @@ fn player_movement_system(
     } else {
         PLAYER_SPEED
     };
-    players.single_mut().translation += Vec3::new(
+    players.single_mut().unwrap().translation += Vec3::new(
         (keys.pressed(KeyCode::ArrowRight) as i32 - keys.pressed(KeyCode::ArrowLeft) as i32) as f32,
         (keys.pressed(KeyCode::ArrowUp) as i32 - keys.pressed(KeyCode::ArrowDown) as i32) as f32,
         0.,
