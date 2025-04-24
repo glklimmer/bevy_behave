@@ -10,12 +10,12 @@ license = "MIT OR Apache-2.0"
 authors = ["Richard Jones <rj@metabrew.com>"]
 
 [dependencies]
-bevy = {version = "0.16.0-rc.5", default-features = false, features = ["bevy_log"]}
+bevy = {version = "0.16", default-features = false, features = ["bevy_log"]}
 dyn-clone = "1.0.18"
 ego-tree = "0.10.0"
 
 [dev-dependencies]
-bevy = {version = "0.16.0-rc.5", default-features = true}
+bevy = {version = "0.16", default-features = true}
 bevy_screen_diagnostics = {git = "https://github.com/AlephCubed/bevy_screen_diagnostics.git", branch = "bevy-0.16"}
 bevy_pancam = { git = "https://github.com/ConnerPetzold/bevy_pancam.git", branch = "bevy-0.16" }
 rand = "0.9.0"
