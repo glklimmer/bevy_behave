@@ -158,6 +158,66 @@ fn test_frame_delays_sync() {
     run_frame_delays(true, 1);
 }
 
+#[test]
+fn test_while_node() {
+    use crate::prelude::*;
+    use bevy::prelude::*;
+
+    #[derive(Event, Clone)]
+    struct RunAssert;
+
+    #[derive(Event, Clone)]
+    struct Count;
+
+    fn should_only_run_once(
+        trigger: Trigger<BehaveTrigger<RunAssert>>,
+        mut cmd: Commands,
+        mut count: Local<u32>,
+    ) {
+        *count += 1;
+        assert_eq!(*count, 1);
+        cmd.trigger(trigger.ctx.success());
+    }
+
+    fn run_twice(
+        trigger: Trigger<BehaveTrigger<Count>>,
+        mut cmd: Commands,
+        mut count: Local<u32>,
+        mut exit: EventWriter<AppExit>,
+    ) {
+        *count += 1;
+        cmd.trigger(trigger.ctx.success());
+        if *count == 2 {
+            exit.write(AppExit::Success);
+        }
+    }
+
+    let mut app = App::new();
+    let app = app
+        .add_plugins((
+            BehavePlugin::default(),
+            MinimalPlugins,
+            bevy::log::LogPlugin::default(),
+        ))
+        .add_observer(should_only_run_once)
+        .add_observer(run_twice)
+        .add_systems(Startup, |mut cmd: Commands| {
+            let tree = behave! {
+                Behave::Forever => {
+                    Behave::Sequence => {
+                        Behave::trigger(RunAssert),
+                        Behave::While => {
+                            Behave::AlwaysSucceed,
+                            Behave::trigger(Count),
+                        }
+                    }
+                }
+            };
+            cmd.spawn(BehaveTree::new(tree).with_logging(true));
+        });
+    app.run();
+}
+
 /// Increments a u32 frame counter at the start of FixedPreUpdate, before the trees tick.
 /// Checks that the final frame number matches what we expect, once the topmost tree finishes.
 ///
