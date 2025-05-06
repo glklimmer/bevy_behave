@@ -421,6 +421,8 @@ fn tick_node(
                                 *n.value().status_mut() = Some(BehaveNodeStatus::PendingReset);
                                 BehaveNodeStatus::PendingReset
                             }
+                            // if body is resetting, don't reset the whole loop
+                            BehaveNodeStatus::PendingReset => BehaveNodeStatus::Running,
                             other => {
                                 // failing second node doesn't matter, we dont care. always run again.
                                 *n.value().status_mut() = Some(other);
@@ -432,6 +434,7 @@ fn tick_node(
                         BehaveNodeStatus::PendingReset
                     }
                 }
+                BehaveNodeStatus::PendingReset => BehaveNodeStatus::Running,
                 other => {
                     *first_child.value().status_mut() = Some(other);
                     *n.value().status_mut() = Some(other);
@@ -474,6 +477,7 @@ fn tick_node(
                         BehaveNodeStatus::Failure
                     }
                 }
+                BehaveNodeStatus::PendingReset => BehaveNodeStatus::Running,
                 other => {
                     *n.value().status_mut() = Some(other);
                     other
@@ -492,6 +496,7 @@ fn tick_node(
                     *n.value().status_mut() = Some(BehaveNodeStatus::PendingReset);
                     BehaveNodeStatus::PendingReset
                 }
+                BehaveNodeStatus::PendingReset => BehaveNodeStatus::Running,
                 other => other,
             }
         }
@@ -534,6 +539,7 @@ fn tick_node(
             let res = match tick_node(&mut only_child, time, commands, tick_ctx) {
                 BehaveNodeStatus::Success => BehaveNodeStatus::Failure, // swapped
                 BehaveNodeStatus::Failure => BehaveNodeStatus::Success, // swapped
+                BehaveNodeStatus::PendingReset => BehaveNodeStatus::Running,
                 other => other,
             };
             let Invert { status } = n.value() else {
@@ -639,6 +645,10 @@ fn tick_node(
                             break;
                         }
                     }
+                    BehaveNodeStatus::PendingReset => {
+                        final_status = BehaveNodeStatus::Running;
+                        break;
+                    }
                     // A non-success state just gets bubbled up to the parent
                     other => {
                         final_status = other;
@@ -671,6 +681,10 @@ fn tick_node(
                         } else {
                             break;
                         }
+                    }
+                    BehaveNodeStatus::PendingReset => {
+                        final_status = BehaveNodeStatus::Running;
+                        break;
                     }
                     // A non-failure state just gets bubbled up to the parent
                     other => {
