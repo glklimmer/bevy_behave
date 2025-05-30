@@ -75,7 +75,7 @@ impl BehaveCtx {
     /// The `Time::elapsed_secs()`` when this behaviour was spawned/triggered.
     /// Useful to calculate how long the behaviour has been running:
     /// `time.elapsed_secs() - ctx.elapsed_secs_epoch()`
-    pub fn elapsed_secs_epoch(&self) -> f32 {
+    pub fn elapsed_secs(&self) -> f32 {
         self.elapsed_secs
     }
     /// Was this context created for a trigger_req node?

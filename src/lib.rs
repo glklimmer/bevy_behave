@@ -23,7 +23,7 @@ pub use ego_tree;
 use plugin::TickCtx;
 
 /// Includes the ego_tree `tree!` macro for easy tree construction.
-/// this crate also re-exports `ego_tree` so you can construct trees manually (but not in prelude).
+/// this crate also re-exports `ego_tree` so you can construct trees manually.
 pub mod prelude {
     pub use super::behave;
     pub use super::behave_trigger::BehaveTrigger;
@@ -380,7 +380,6 @@ fn reset_descendants(n: &mut NodeMut<BehaveNode>) {
 
 fn tick_node(
     n: &mut NodeMut<BehaveNode>,
-    time: &Res<Time>,
     commands: &mut Commands,
     tick_ctx: &TickCtx,
 ) -> BehaveNodeStatus {
@@ -406,14 +405,14 @@ fn tick_node(
             let mut first_child = n
                 .first_child()
                 .expect("While node first child must exist (the conditional)");
-            match tick_node(&mut first_child, time, commands, tick_ctx) {
+            match tick_node(&mut first_child, commands, tick_ctx) {
                 BehaveNodeStatus::Success => {
                     *first_child.value().status_mut() = Some(BehaveNodeStatus::Success);
                     // if the conditional succeeds, we run the second child if present.
                     // also supported a while node with just one child, which will simply repeat
                     // until that child fails.
                     if let Some(mut second_child) = first_child.next_sibling() {
-                        match tick_node(&mut second_child, time, commands, tick_ctx) {
+                        match tick_node(&mut second_child, commands, tick_ctx) {
                             BehaveNodeStatus::Success => {
                                 *second_child.value().status_mut() =
                                     Some(BehaveNodeStatus::Success);
@@ -448,14 +447,14 @@ fn tick_node(
                 .first_child()
                 .expect("IfThen node first child must exist (the 'if condition' child)");
             // evaluate the condition child
-            match tick_node(&mut conditional_child, time, commands, tick_ctx) {
+            match tick_node(&mut conditional_child, commands, tick_ctx) {
                 BehaveNodeStatus::Success => {
                     // the condition child succeeded, so the If node returns the result of evaluating the then child.
                     *conditional_child.value().status_mut() = Some(BehaveNodeStatus::Success);
                     let mut then_child = conditional_child
                         .next_sibling()
                         .expect("IfThen node second child must exist (the 'then' child)");
-                    let then_result = tick_node(&mut then_child, time, commands, tick_ctx);
+                    let then_result = tick_node(&mut then_child, commands, tick_ctx);
                     *n.value().status_mut() = Some(then_result);
                     then_result
                 }
@@ -468,7 +467,7 @@ fn tick_node(
                         .next_sibling()
                     {
                         // if there is an else child, the If node returns the result of evaluating the else child.
-                        let else_result = tick_node(&mut else_child, time, commands, tick_ctx);
+                        let else_result = tick_node(&mut else_child, commands, tick_ctx);
                         *n.value().status_mut() = Some(else_result);
                         else_result
                     } else {
@@ -490,7 +489,7 @@ fn tick_node(
             if only_child.has_siblings() {
                 panic!("Forever nodes must have a single child, not multiple children");
             }
-            match tick_node(&mut only_child, time, commands, tick_ctx) {
+            match tick_node(&mut only_child, commands, tick_ctx) {
                 // if our child node completes, reset next tick so we can run it again
                 BehaveNodeStatus::Success | BehaveNodeStatus::Failure => {
                     *n.value().status_mut() = Some(BehaveNodeStatus::PendingReset);
@@ -536,7 +535,7 @@ fn tick_node(
             if only_child.has_siblings() {
                 panic!("Invert nodes must have a single child, not multiple children");
             }
-            let res = match tick_node(&mut only_child, time, commands, tick_ctx) {
+            let res = match tick_node(&mut only_child, commands, tick_ctx) {
                 BehaveNodeStatus::Success => BehaveNodeStatus::Failure, // swapped
                 BehaveNodeStatus::Failure => BehaveNodeStatus::Success, // swapped
                 BehaveNodeStatus::PendingReset => BehaveNodeStatus::Running,
@@ -563,7 +562,7 @@ fn tick_node(
             ..
         } => {
             // info!("Starting wait");
-            *start_time = Some(time.elapsed_secs());
+            *start_time = Some(tick_ctx.elapsed_secs);
             *status = Some(BehaveNodeStatus::Running);
             BehaveNodeStatus::Running
         }
@@ -574,7 +573,7 @@ fn tick_node(
             status,
         } => {
             // info!("Waiting");
-            let elapsed = time.elapsed_secs() - *start_time;
+            let elapsed = tick_ctx.elapsed_secs - *start_time;
             if elapsed > *secs_to_wait {
                 *status = Some(BehaveNodeStatus::Success);
                 return BehaveNodeStatus::Success;
@@ -635,7 +634,7 @@ fn tick_node(
 
             let mut final_status;
             loop {
-                match tick_node(&mut child, time, commands, tick_ctx) {
+                match tick_node(&mut child, commands, tick_ctx) {
                     BehaveNodeStatus::Success => {
                         final_status = BehaveNodeStatus::Success;
                         if let Ok(next_child) = child.into_next_sibling() {
@@ -671,7 +670,7 @@ fn tick_node(
 
             let mut final_status;
             loop {
-                match tick_node(&mut child, time, commands, tick_ctx) {
+                match tick_node(&mut child, commands, tick_ctx) {
                     BehaveNodeStatus::Failure => {
                         // a child fails, try the next one, or if no more children, we failed.
                         final_status = BehaveNodeStatus::Failure;

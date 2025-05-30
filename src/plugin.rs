@@ -1,5 +1,5 @@
 use crate::{
-    prelude::*, tick_node, BehaveNode, BehaveNodeStatus, EntityTaskStatus, TriggerTaskStatus,
+    BehaveNode, BehaveNodeStatus, EntityTaskStatus, TriggerTaskStatus, prelude::*, tick_node,
 };
 use bevy::ecs::system::SystemState;
 use bevy::prelude::*;
@@ -120,15 +120,15 @@ fn tick_trees(
 ) {
     for (bt_entity, mut bt, opt_parent, target_entity, opt_sup_entity) in query.iter_mut() {
         let target_entity = match target_entity {
-            BehaveTargetEntity::Parent => {
-                opt_parent.map(|p| p.parent()).unwrap_or(Entity::PLACEHOLDER)
-            }
+            BehaveTargetEntity::Parent => opt_parent
+                .map(|p| p.parent())
+                .unwrap_or(Entity::PLACEHOLDER),
             BehaveTargetEntity::Entity(e) => *e,
             BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
         };
         let tick_ctx = TickCtx::new(bt_entity, target_entity, time.elapsed_secs())
             .with_optional_sup_entity(opt_sup_entity.map(|c| c.0));
-        let tick_result = bt.tick(&time, &mut commands, &tick_ctx);
+        let tick_result = bt.tick(&mut commands, &tick_ctx);
         match tick_result {
             BehaveNodeStatus::AwaitingTrigger => {
                 commands.entity(bt_entity).insert(BehaveAwaitingTrigger);
@@ -195,15 +195,15 @@ fn tick_trees_sync(
         let mut trees_processed = 0;
         for (bt_entity, mut bt, opt_parent, target_entity, opt_sup_entity) in query.iter_mut() {
             let target_entity = match target_entity {
-                BehaveTargetEntity::Parent => {
-                    opt_parent.map(|p| p.parent()).unwrap_or(Entity::PLACEHOLDER)
-                }
+                BehaveTargetEntity::Parent => opt_parent
+                    .map(|p| p.parent())
+                    .unwrap_or(Entity::PLACEHOLDER),
                 BehaveTargetEntity::Entity(e) => *e,
                 BehaveTargetEntity::RootAncestor => q_parents.root_ancestor(bt_entity),
             };
             let tick_ctx = TickCtx::new(bt_entity, target_entity, time.elapsed_secs())
                 .with_optional_sup_entity(opt_sup_entity.map(|c| c.0));
-            let tick_result = bt.tick(&time, &mut commands, &tick_ctx);
+            let tick_result = bt.tick(&mut commands, &tick_ctx);
             match tick_result {
                 BehaveNodeStatus::AwaitingTrigger => {
                     commands.entity(bt_entity).insert(BehaveAwaitingTrigger);
@@ -366,14 +366,9 @@ impl BehaveTree {
         self
     }
 
-    fn tick(
-        &mut self,
-        time: &Res<Time>,
-        commands: &mut Commands,
-        tick_ctx: &TickCtx,
-    ) -> BehaveNodeStatus {
+    fn tick(&mut self, commands: &mut Commands, tick_ctx: &TickCtx) -> BehaveNodeStatus {
         let mut node = self.tree.root_mut();
-        tick_node(&mut node, time, commands, tick_ctx)
+        tick_node(&mut node, commands, tick_ctx)
     }
 
     /// Returns Option<Entity> being an entity that was spawned to run this task node.
