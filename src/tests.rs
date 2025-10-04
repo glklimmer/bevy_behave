@@ -129,11 +129,11 @@ fn test_root_ancestor_with_nested_trees() {
         info!("spawned tree with id: {}", id);
     });
     app.add_observer(
-        |t: Trigger<OnAdd, BehaveFinished>,
+        |t: On<Add, BehaveFinished>,
          q: Query<(&BehaveFinished, &BehaveCtx)>,
-         mut exit: EventWriter<AppExit>,
+         mut exit: MessageWriter<AppExit>,
          mut commands: Commands| {
-            let Ok((finished, ctx)) = q.get(t.target()) else {
+            let Ok((finished, ctx)) = q.get(t.event().entity) else {
                 // if there was no BehaveCtx on this entity, it was the topmost tree, so exit the test
                 exit.write(AppExit::Success);
                 return;
@@ -170,7 +170,7 @@ fn test_while_node() {
     struct Count;
 
     fn should_only_run_once(
-        trigger: Trigger<BehaveTrigger<RunAssert>>,
+        trigger: On<BehaveTrigger<RunAssert>>,
         mut cmd: Commands,
         mut count: Local<u32>,
     ) {
@@ -180,10 +180,10 @@ fn test_while_node() {
     }
 
     fn run_twice(
-        trigger: Trigger<BehaveTrigger<Count>>,
+        trigger: On<BehaveTrigger<Count>>,
         mut cmd: Commands,
         mut count: Local<u32>,
-        mut exit: EventWriter<AppExit>,
+        mut exit: MessageWriter<AppExit>,
     ) {
         *count += 1;
         cmd.trigger(trigger.ctx.success());
@@ -242,7 +242,7 @@ fn run_frame_delays(sync: bool, expected_final_frame: u32) {
     struct CheckTrigger(bool);
 
     fn on_check_trigger(
-        t: Trigger<BehaveTrigger<CheckTrigger>>,
+        t: On<BehaveTrigger<CheckTrigger>>,
         mut commands: Commands,
         frame: Res<Frame>,
     ) {
@@ -257,8 +257,8 @@ fn run_frame_delays(sync: bool, expected_final_frame: u32) {
 
     // run once the topmost tree completes.
     fn final_tree_finished_checker(
-        _t: Trigger<OnAdd, BehaveFinished>,
-        mut exit: EventWriter<AppExit>,
+        _t: On<Add, BehaveFinished>,
+        mut exit: MessageWriter<AppExit>,
         frame: Res<Frame>,
         expected_final_frame: Res<ExpectedFinalFrame>,
     ) {
@@ -295,10 +295,10 @@ fn run_frame_delays(sync: bool, expected_final_frame: u32) {
         info!("spawned tree with id: {}", id);
     });
     app.add_observer(
-        |t: Trigger<OnAdd, BehaveFinished>,
+        |t: On<Add, BehaveFinished>,
          q: Query<(&BehaveFinished, &BehaveCtx)>,
          mut commands: Commands| {
-            let Ok((finished, ctx)) = q.get(t.target()) else {
+            let Ok((finished, ctx)) = q.get(t.event().entity) else {
                 // if there was no BehaveCtx on this entity, it was the topmost tree, so just return.
                 return;
             };

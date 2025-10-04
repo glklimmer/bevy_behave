@@ -41,7 +41,7 @@ struct MyThenAction;
 struct MyElseAction;
 
 fn on_my_if_condition(
-    trigger: Trigger<BehaveTrigger<MyIfCondition>>,
+    trigger: On<BehaveTrigger<MyIfCondition>>,
     mut commands: Commands,
     mut counter: Local<u32>,
 ) {
@@ -56,7 +56,7 @@ fn on_my_if_condition(
 }
 
 fn on_my_then_action(
-    trigger: Trigger<BehaveTrigger<MyThenAction>>,
+    trigger: On<BehaveTrigger<MyThenAction>>,
     mut commands: Commands,
     time: Res<Time>,
 ) {
@@ -70,7 +70,7 @@ fn on_my_then_action(
 }
 
 // contrived example. this would be better off just being `Behave::AlwaysFail`.
-fn on_my_else_action(trigger: Trigger<BehaveTrigger<MyElseAction>>, mut commands: Commands) {
+fn on_my_else_action(trigger: On<BehaveTrigger<MyElseAction>>, mut commands: Commands) {
     info!("MyElseAction!");
     commands.trigger(trigger.event().ctx().failure());
 }

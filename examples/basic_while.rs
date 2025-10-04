@@ -37,7 +37,7 @@ struct MyCondition;
 struct MyAction;
 
 fn on_my_condition(
-    trigger: Trigger<BehaveTrigger<MyCondition>>,
+    trigger: On<BehaveTrigger<MyCondition>>,
     mut commands: Commands,
     mut counter: Local<u32>,
 ) {
@@ -51,11 +51,7 @@ fn on_my_condition(
     }
 }
 
-fn on_my_action(
-    trigger: Trigger<BehaveTrigger<MyAction>>,
-    mut commands: Commands,
-    time: Res<Time>,
-) {
+fn on_my_action(trigger: On<BehaveTrigger<MyAction>>, mut commands: Commands, time: Res<Time>) {
     info!("MyAction!");
     // commands.trigger(trigger.event().ctx().success());
     // let's pretend we're doing something clever, and reporting success after a delay:

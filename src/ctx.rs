@@ -144,7 +144,7 @@ impl BehaveStatusReport {
 // when we recieve a status report, we add the result to the tree node, so it's processed the
 // next time the tree ticks.
 fn on_behave_status_report(
-    trigger: Trigger<BehaveStatusReport>,
+    trigger: On<BehaveStatusReport>,
     mut commands: Commands,
     mut q_bt: Query<&mut BehaveTree, Without<BehaveFinished>>,
 ) {

@@ -439,11 +439,11 @@ impl BehaveTimeout {
 }
 
 fn on_tick_timeout_added(
-    t: Trigger<OnAdd, BehaveTimeout>,
+    t: On<Add, BehaveTimeout>,
     mut q: Query<&mut BehaveTimeout>,
     time: Res<Time>,
 ) {
-    let mut timeout = q.get_mut(t.target()).unwrap();
+    let mut timeout = q.get_mut(t.event().entity).unwrap();
     timeout.start_time = time.elapsed_secs();
 }
 
