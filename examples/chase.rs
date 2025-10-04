@@ -1,6 +1,9 @@
 use bevy::{
-    color::palettes::css, diagnostic::FrameTimeDiagnosticsPlugin, post_process::bloom::Bloom,
-    prelude::*, render::view::Hdr,
+    color::palettes::css,
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    post_process::bloom::Bloom,
+    prelude::*,
+    render::view::Hdr,
 };
 use bevy_behave::prelude::*;
 use bevy_pancam::*;
@@ -17,7 +20,10 @@ fn main() {
         }),
         ..default()
     }));
-    app.add_plugins(FrameTimeDiagnosticsPlugin::default());
+    app.add_plugins((
+        FrameTimeDiagnosticsPlugin::default(),
+        LogDiagnosticsPlugin::default(),
+    ));
     app.add_plugins(PanCamPlugin);
     app.add_plugins(BehavePlugin::default());
     app.add_systems(Startup, init);
