@@ -106,7 +106,7 @@ mod tests {
         val: Option<MyStruct>,
     }
 
-    fn on_trig(trigger: Trigger<BehaveTrigger<MyStruct>>, mut res: ResMut<TrigRes>) {
+    fn on_trig(trigger: On<BehaveTrigger<MyStruct>>, mut res: ResMut<TrigRes>) {
         res.val = Some(*trigger.event().inner());
     }
 

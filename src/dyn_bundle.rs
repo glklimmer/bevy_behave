@@ -21,7 +21,7 @@ pub mod prelude {
 fn insert<T: Bundle + Clone>(bundle: T) -> impl DynEntityCommand {
     move |mut entity_world: EntityWorldMut, ctx: Option<BehaveCtx>| {
         let entity = entity_world.id();
-        
+
         entity_world.world_scope(|world| {
             if let Ok(mut entity) = world.get_entity_mut(entity) {
                 if let Some(ctx) = ctx {
@@ -121,12 +121,20 @@ struct DynamicSpawnWrapper {
 #[allow(dead_code)]
 pub trait DynamicSpawn {
     /// Spawns an entity with the provided dynamic bundle.
-    fn dyn_spawn(&mut self, dyn_bundel: DynamicBundel, ctx: Option<BehaveCtx>) -> EntityCommands;
+    fn dyn_spawn(
+        &mut self,
+        dyn_bundel: DynamicBundel,
+        ctx: Option<BehaveCtx>,
+    ) -> EntityCommands<'_>;
 }
 
 // Implementation for Commands
 impl DynamicSpawn for Commands<'_, '_> {
-    fn dyn_spawn(&mut self, dyn_bundel: DynamicBundel, ctx: Option<BehaveCtx>) -> EntityCommands {
+    fn dyn_spawn(
+        &mut self,
+        dyn_bundel: DynamicBundel,
+        ctx: Option<BehaveCtx>,
+    ) -> EntityCommands<'_> {
         let mut entity_commands = self.spawn(());
         entity_commands.dyn_insert(dyn_bundel, ctx);
         entity_commands

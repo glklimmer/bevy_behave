@@ -439,7 +439,7 @@ struct HeightCheck {
 }
 
 // you respond by triggering a success or failure event created by the ctx:
-fn on_height_check(trigger: Trigger<BehaveTrigger<HeightCheck>>, q: Query<&Position>, mut commands: Commands) {
+fn on_height_check(trigger: On<BehaveTrigger<HeightCheck>>, q: Query<&Position>, mut commands: Commands) {
     let ev = trigger.event();
     let ctx: &BehaveCtx = ev.ctx();
     let height_check: &HeightCheck = ev.inner();
@@ -634,6 +634,7 @@ https://github.com/user-attachments/assets/ef4f0539-0b4d-4d57-9516-a39783de140f
 
 | bevy_behave | bevy |
 | ----------- | ---- |
+| 0.4         | 0.17 |
 | 0.3         | 0.16 |
 | 0.2.2       | 0.15 |
 

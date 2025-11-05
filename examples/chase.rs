@@ -1,9 +1,12 @@
-use bevy::{color::palettes::css, prelude::*};
+use bevy::{
+    color::palettes::css,
+    diagnostic::{FrameTimeDiagnosticsPlugin, LogDiagnosticsPlugin},
+    post_process::bloom::Bloom,
+    prelude::*,
+    render::view::Hdr,
+};
 use bevy_behave::prelude::*;
 use bevy_pancam::*;
-use bevy_screen_diagnostics::{
-    ScreenDiagnosticsPlugin, ScreenEntityDiagnosticsPlugin, ScreenFrameDiagnosticsPlugin,
-};
 
 /// ask BehaveTree to log transitions. verbose with logs of enemies!
 const ENABLE_LOGGING: bool = false;
@@ -17,9 +20,10 @@ fn main() {
         }),
         ..default()
     }));
-    app.add_plugins(ScreenDiagnosticsPlugin::default());
-    app.add_plugins(ScreenFrameDiagnosticsPlugin);
-    app.add_plugins(ScreenEntityDiagnosticsPlugin);
+    app.add_plugins((
+        FrameTimeDiagnosticsPlugin::default(),
+        LogDiagnosticsPlugin::default(),
+    ));
     app.add_plugins(PanCamPlugin);
     app.add_plugins(BehavePlugin::default());
     app.add_systems(Startup, init);
@@ -64,12 +68,9 @@ fn init(mut commands: Commands) {
         Camera2d,
         // enable HDR and bloom so we can make out player pop a bit,
         // which makes it easier to see if you are swarmed by 10,000 enemies at once.
-        Camera {
-            hdr: true,
-            ..default()
-        },
+        Hdr,
         bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface,
-        bevy::core_pipeline::bloom::Bloom::default(),
+        Bloom::default(),
         PanCam {
             move_keys: DirectionKeys::NONE,
             ..default()
@@ -90,7 +91,7 @@ struct SpawnEnemies(usize);
 struct DespawnEnemies(usize);
 
 fn on_despawn_enemies(
-    trigger: Trigger<DespawnEnemies>,
+    trigger: On<DespawnEnemies>,
     q: Query<Entity, With<Enemy>>,
     mut commands: Commands,
 ) {
@@ -106,7 +107,7 @@ fn on_despawn_enemies(
 }
 
 fn on_spawn_enemies(
-    trigger: Trigger<SpawnEnemies>,
+    trigger: On<SpawnEnemies>,
     player: Single<Entity, With<Player>>,
     mut commands: Commands,
 ) {
@@ -184,7 +185,7 @@ struct MoveTowardsPlayer {
 struct RandomizeColour;
 
 fn on_randomize_colour(
-    trigger: Trigger<BehaveTrigger<RandomizeColour>>,
+    trigger: On<BehaveTrigger<RandomizeColour>>,
     mut q: Query<&mut Appearance, With<Enemy>>,
     mut commands: Commands,
 ) {
@@ -224,21 +225,21 @@ fn wait_system(
 // Note: we aren't replying with a success or failure in OnAdd (although we could), because this
 // component has a `move_system` that runs in FixedUpdate, which does the responding.
 fn onadd_move_towards_player(
-    trigger: Trigger<OnAdd, MoveTowardsPlayer>,
+    trigger: On<Add, MoveTowardsPlayer>,
     q: Query<&BehaveCtx, With<MoveTowardsPlayer>>,
     mut q_target: Query<&mut Appearance, With<Enemy>>,
 ) {
-    let ctx = q.get(trigger.target()).unwrap();
+    let ctx = q.get(trigger.event().entity).unwrap();
     let mut appearance = q_target.get_mut(ctx.target_entity()).unwrap();
     appearance.show_vision = true;
 }
 
 fn onremove_move_towards_player(
-    trigger: Trigger<OnRemove, MoveTowardsPlayer>,
+    trigger: On<Remove, MoveTowardsPlayer>,
     q: Query<&BehaveCtx, With<MoveTowardsPlayer>>,
     mut q_target: Query<&mut Appearance, With<Enemy>>,
 ) {
-    let ctx = q.get(trigger.target()).unwrap();
+    let ctx = q.get(trigger.event().entity).unwrap();
     let mut appearance = q_target.get_mut(ctx.target_entity()).unwrap();
     appearance.show_vision = false;
 }
@@ -403,11 +404,8 @@ fn example_debug_plugin(app: &mut App) {
 // so if you used the _named fn, or included a Name in the bundle, you can log them like this
 // whenever a new entity for a task node is spawned:
 #[allow(unused)]
-fn on_new_behaviour(
-    trigger: Trigger<OnAdd, BehaveCtx>,
-    q: Query<(Entity, Option<&Name>, &BehaveCtx)>,
-) {
-    if let Ok((entity, name, ctx)) = q.get(trigger.target()) {
+fn on_new_behaviour(trigger: On<Add, BehaveCtx>, q: Query<(Entity, Option<&Name>, &BehaveCtx)>) {
+    if let Ok((entity, name, ctx)) = q.get(trigger.event().entity) {
         info!("New behaviour spawned {entity} {ctx} = {name:?}");
     }
 }
@@ -419,7 +417,7 @@ fn on_new_behaviour(
 // Right after this trigger is processed, the dynamic entity will be despawned.
 // In the case of a trigger node, the task_entity will be None, since trigger nodes don't spawn.
 #[allow(unused)]
-fn on_status_report(trigger: Trigger<BehaveStatusReport>, q: Query<&Name>) {
+fn on_status_report(trigger: On<BehaveStatusReport>, q: Query<&Name>) {
     // task_entity() from the Ctx is the dynamic entity spawned to run the task, which will be
     // despawning next frame. You still have access to read all the components at this point.
     let Some(task_entity) = trigger.ctx().task_entity() else {
